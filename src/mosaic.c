@@ -46,7 +46,6 @@ bool msic_check_layer_support(void) {
   uint32_t layer_count;
   MSIC_VK_CALL(vkEnumerateInstanceLayerProperties(&layer_count, NULL));
 
-  // TODO this is not gonna work!
   VkLayerProperties layer_props[layer_count];
   MSIC_VK_CALL(vkEnumerateInstanceLayerProperties(&layer_count, layer_props));
  
@@ -71,6 +70,21 @@ bool msic_check_layer_support(void) {
   }
 
   return true;
+}
+
+uint32_t msic_write_extensions(uint32_t extension_count, const char** pp_extension_names) {
+  memcpy(pp_extension_names, msic_extensions, msic_extension_count * sizeof(char *));
+
+  if (msic_enable_validation) {
+    if (extension_count < msic_extension_count + 1) {
+      MSIC_ERR("extension_count not large enough for msic_extension_count and the debug utils extension");
+      return 1;
+    }
+
+    pp_extension_names[msic_extension_count] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME; 
+  }
+
+  return 0;
 }
 
 uint32_t msic_write_layers(uint32_t layer_count, const char** pp_layer_names) {
@@ -104,22 +118,34 @@ uint32_t msic_create_instance(MsicVulkanCore *core) {
   createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
   createInfo.pApplicationInfo = &appInfo;
 
-  createInfo.enabledExtensionCount = 0;
-  createInfo.ppEnabledExtensionNames = NULL;
+
+  createInfo.enabledExtensionCount = msic_extension_count + msic_enable_validation;
+  const char *extension_names[createInfo.enabledExtensionCount];
   
+  if (msic_write_extensions(createInfo.enabledExtensionCount, extension_names)) {
+    MSIC_ERR("Failed to write vulkan extension names");
+    return 1;
+  }
+  
+  createInfo.ppEnabledExtensionNames = (const char * const *) extension_names;
+
 
   createInfo.enabledLayerCount = msic_layer_count + msic_enable_validation;
   const char *layer_names[createInfo.enabledLayerCount]; 
+
   if (msic_write_layers(createInfo.enabledLayerCount, layer_names)) {
     MSIC_ERR("Failed to write vulkan layer names");
     return 1;
   }
+  createInfo.ppEnabledLayerNames = (const char * const *) layer_names;
 
-  for (uint32_t i = 0; i < createInfo.enabledLayerCount; i++) {
-    MSIC_INFO("\tEnabling layer: %s", layer_names[i]);
+  for (uint32_t i = 0; i < createInfo.enabledExtensionCount; i++) {
+    MSIC_VERBOSE("\tEnabling extension: %s", extension_names[i]);
   }
 
-  createInfo.ppEnabledLayerNames = (const char * const *) layer_names;
+  for (uint32_t i = 0; i < createInfo.enabledLayerCount; i++) {
+    MSIC_VERBOSE("\tEnabling layer: %s", layer_names[i]);
+  }
   
   MSIC_VK_CALL(vkCreateInstance(&createInfo, NULL, &core->instance));
 
@@ -139,7 +165,14 @@ uint32_t msic_build_vulkan_core(MsicVulkanCore *core) {
     MSIC_ERR("Layer support validation failed");
   }
 
-  msic_create_instance(core);
+  uint32_t res = msic_create_instance(core);
+  if (res) return res;
+
+  if (msic_enable_validation) {
+    MSIC_INFO("Enabling vulkan debug messenger");
+    msic_setup_debug_messenger(core);
+    if (res) return res;
+  }
 
   MSIC_INFO("Finished loading vulkan core");
   return 0;

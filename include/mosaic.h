@@ -87,13 +87,24 @@ extern bool msic_initialized;
 extern bool msic_enable_validation;
 
 /** 
- * Control parameter specifying number of additional layers in `msic_layers` 
+ * Control parameter specifying number of additional extensions in \link msic_extensions \endlink 
+ */
+extern uint32_t msic_extension_count;
+
+/** 
+ * Control parameter specifying additional vulkan extensions to enable.
+ * Number of extensions must be specified in \link msic_extension_count \endlink
+ */
+extern char **msic_extensions;
+
+/** 
+ * Control parameter specifying number of additional layers in \link msic_layers \endlink
  */
 extern uint32_t msic_layer_count;
 
 /** 
  * Control parameter specifying additional vulkan layers to enable.
- * Number of layers must be specified in `msic_layer_count`
+ * Number of layers must be specified in \link msic_layer_count \endlink
  */
 extern char **msic_layers;
 
@@ -138,6 +149,11 @@ typedef struct MsicVulkanCore {
    * Vulkan instance handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkInstance.html
    */
   VkInstance instance;
+
+  /**
+   * Vulkan debug messenger handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkDebugUtilsMessengerEXT.html
+   */
+  VkDebugUtilsMessengerEXT debug_messenger;
 } MsicVulkanCore;
 
 /**

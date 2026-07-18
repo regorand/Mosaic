@@ -11,6 +11,9 @@ uint32_t msic_log_level = MSIC_SEVERITY_INFO;
 bool msic_initialized = false;
 bool msic_enable_validation = true;
 
+char **msic_extensions = NULL;
+uint32_t msic_extension_count = 0;
+
 char **msic_layers = NULL;
 uint32_t msic_layer_count = 0;
 
