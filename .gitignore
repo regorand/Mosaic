@@ -2,6 +2,8 @@
 
 # build directory
 bin
+docs/html
+docs/latex
 
 ### Vim specific
 # Swap

@@ -3,12 +3,21 @@
 INC=-I${VULKAN_SDK}/include -I./include 
 LIB=-lvulkan
 
-AUXFILES = 
-PROJDIRS = src include
+DOCS_FILES = docs/manual/index.dox Doxyfile
+AUXFILES = $(DOCS_FILES)
+SRC_DIR = src
+INCL_DIR = include
+PROJDIRS = $(SRC_DIR) $(INCL_DIR) 
 SPLDIRS  = samples
 
+DOCS = docs/html/index.html
+
 SRCFILES = $(shell find $(PROJDIRS) -type f -name "*.c")
-HDRFILES = $(shell find $(PROJDIRS) -type f -name "*.h")
+
+PRIV_HDR_FILES = $(shell find $(SRC_DIR) -type f -name "*.h")
+PUBL_HDR_FILES = $(shell find $(INCL_DIR) -type f -name "*.h")
+
+HDRFILES = $(PRIV_HDR_FILES) $(PUBL_HDR_FILES)
 
 OBJFILES = $(patsubst src/%,bin/objects/%,$(patsubst %.c,%.o,$(SRCFILES)))
 DEPFILES = $(patsubst %.o,%.d,$(OBJFILES))
@@ -16,6 +25,7 @@ DEPFILES = $(patsubst %.o,%.d,$(OBJFILES))
 SPLFILES = $(shell find $(SPLDIRS) -type f -name "*.c")
 SPLOBJFILES = $(patsubst samples/%,bin/objects/%,$(patsubst %.c,%.o,$(SPLFILES)))
 SAMPLES = $(patsubst samples/%,bin/%,$(patsubst %.c,%,$(SPLFILES)))
+
 
 .PHONY: all clean todolist samples
 
@@ -53,3 +63,13 @@ bin/objects/%.o: samples/%.c Makefile | bin/objects
 
 bin/objects: 
 	mkdir -p bin/objects
+	
+docs: $(DOCS)
+
+$(DOCS): $(DOCS_FILES) $(PUBL_HDR_FILES)
+	$(info Building docs)
+	@doxygen
+
+clean-docs: 
+	$(info Cleaning docs)
+	@rm -rf docs/html docs/latex 

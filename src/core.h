@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include "mosaic.h"
 
+#define MSIC_VK_VALIDATION_LAYER_NAME "VK_LAYER_KHRONOS_validation"
+
 bool msic_check_layer(VkLayerProperties *layer_props, uint32_t layer_count, const char * layer_name); 
 
 bool msic_check_layer_support(void); 
