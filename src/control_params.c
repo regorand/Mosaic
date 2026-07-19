@@ -36,3 +36,7 @@ uint32_t (*msic_choose_physical_device)(uint32_t, VkPhysicalDevice *, bool *) = 
 uint32_t msic_num_queue_families = 0;
 
 uint32_t *msic_queue_families_flags = NULL;
+
+uint32_t msic_device_extension_count = 0;
+
+char **msic_device_extensions = NULL;

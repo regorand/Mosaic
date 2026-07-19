@@ -27,23 +27,25 @@ VKAPI_ATTR VkBool32 VKAPI_CALL msic_vk_message_callback(
   return VK_FALSE;
 }
 
-
-uint32_t msic_setup_debug_messenger(MsicVulkanCore *core) {
-  VkDebugUtilsMessengerCreateInfoEXT createInfo = {0};
-
-  createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT; 
+void msic_populate_debug_messenger_create_info(VkDebugUtilsMessengerCreateInfoEXT *create_info) {
+  create_info->sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT; 
   
-  createInfo.messageSeverity =    VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT 
+  create_info->messageSeverity =    VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT 
                                 | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
                               //| VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT 
                               //| VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT; // TODO possible control parameter
 
-  createInfo.messageType     =    VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
+  create_info->messageType     =    VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
                                 | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
                                 | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT; // TODO possible control parameter
                                                                                    
-  createInfo.pfnUserCallback = &msic_vk_message_callback;
-  createInfo.pUserData = NULL; // TODO possible control parameter
+  create_info->pfnUserCallback = &msic_vk_message_callback;
+  create_info->pUserData = NULL; // TODO possible control parameter
+} 
+
+uint32_t msic_setup_debug_messenger(MsicVulkanCore *core) {
+  VkDebugUtilsMessengerCreateInfoEXT create_info = {0};
+  msic_populate_debug_messenger_create_info(&create_info);
 
   PFN_vkCreateDebugUtilsMessengerEXT func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(core->instance, "vkCreateDebugUtilsMessengerEXT");
   if (!func) {
@@ -51,7 +53,7 @@ uint32_t msic_setup_debug_messenger(MsicVulkanCore *core) {
     return 1;
   }
 
-  MSIC_VK_CALL(func(core->instance, &createInfo, NULL, &core->debug_messenger));
+  MSIC_VK_CALL(func(core->instance, &create_info, NULL, &core->debug_messenger));
   return 0;
 }
 
@@ -95,6 +97,61 @@ bool msic_check_layer_support(void) {
   return true;
 }
 
+bool msic_check_extension(VkExtensionProperties *extension_props, uint32_t extension_count, const char * extension_name) {
+  for (uint32_t i = 0; i < extension_count; i++) {
+    if (strcmp(extension_props[i].extensionName, extension_name)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool msic_check_extension_support(void) {
+  uint32_t extension_count;
+  MSIC_VK_CALL(vkEnumerateInstanceExtensionProperties(NULL, &extension_count, NULL));
+
+  VkExtensionProperties extension_props[extension_count];
+  MSIC_VK_CALL(vkEnumerateInstanceExtensionProperties(NULL, &extension_count, extension_props));
+ 
+  if (msic_extension_count > 0 && msic_extensions == NULL) {
+    MSIC_ERR("Requested %d extensions but provided no names to msic_extensions**", msic_extension_count);
+    return false;
+  }
+
+  for (uint32_t i = 0; i < msic_extension_count; i++) {
+    char *extension = msic_extensions[i];
+    if (!msic_check_extension(extension_props, extension_count, extension))  {
+      MSIC_ERR("Requested extension %s is not available", extension);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool msic_check_device_extension_support(VkPhysicalDevice device) {
+  uint32_t extension_count;
+  MSIC_VK_CALL(vkEnumerateDeviceExtensionProperties(device, NULL, &extension_count, NULL));
+
+  VkExtensionProperties extension_props[extension_count];
+  MSIC_VK_CALL(vkEnumerateDeviceExtensionProperties(device, NULL, &extension_count, extension_props));
+ 
+  if (msic_device_extension_count > 0 && msic_device_extensions == NULL) {
+    MSIC_VERBOSE("\tRequested %d device extensions but provided no names to msic_device_extensions**", msic_device_extension_count);
+    return false;
+  }
+
+  for (uint32_t i = 0; i < msic_device_extension_count; i++) {
+    char *extension = msic_device_extensions[i];
+    if (!msic_check_extension(extension_props, extension_count, extension))  {
+      MSIC_VERBOSE("\tRequested device extension %s is not available", extension);
+      return false;
+    }
+  }
+
+  return true;
+}
 uint32_t msic_write_extensions(uint32_t extension_count, const char** pp_extension_names) {
   memcpy(pp_extension_names, msic_extensions, msic_extension_count * sizeof(char *));
 
@@ -144,31 +201,49 @@ uint32_t msic_create_instance(MsicVulkanCore *core) {
 
   createInfo.enabledExtensionCount = msic_extension_count + msic_enable_validation;
   const char *extension_names[createInfo.enabledExtensionCount];
-  
-  if (msic_write_extensions(createInfo.enabledExtensionCount, extension_names)) {
-    MSIC_ERR("Failed to write vulkan extension names");
-    return 1;
-  }
-  
-  createInfo.ppEnabledExtensionNames = (const char * const *) extension_names;
 
+  if (createInfo.enabledExtensionCount > 0) {
+    
+    if (msic_write_extensions(createInfo.enabledExtensionCount, extension_names)) {
+      MSIC_ERR("Failed to write vulkan extension names");
+      return 1;
+    }
+    
+    createInfo.ppEnabledExtensionNames = (const char * const *) extension_names;
+
+    for (uint32_t i = 0; i < createInfo.enabledExtensionCount; i++) {
+      MSIC_VERBOSE("\tEnabling extension: %s", extension_names[i]);
+    }
+
+  } else {
+    createInfo.ppEnabledExtensionNames = NULL;
+  }
 
   createInfo.enabledLayerCount = msic_layer_count + msic_enable_validation;
   const char *layer_names[createInfo.enabledLayerCount]; 
 
-  if (msic_write_layers(createInfo.enabledLayerCount, layer_names)) {
-    MSIC_ERR("Failed to write vulkan layer names");
-    return 1;
-  }
-  createInfo.ppEnabledLayerNames = (const char * const *) layer_names;
+  if (createInfo.enabledLayerCount > 0) {
+    if (msic_write_layers(createInfo.enabledLayerCount, layer_names)) {
+      MSIC_ERR("Failed to write vulkan layer names");
+      return 1;
+    }
 
-  for (uint32_t i = 0; i < createInfo.enabledExtensionCount; i++) {
-    MSIC_VERBOSE("\tEnabling extension: %s", extension_names[i]);
+    createInfo.ppEnabledLayerNames = (const char * const *) layer_names;
+
+    for (uint32_t i = 0; i < createInfo.enabledLayerCount; i++) {
+      MSIC_VERBOSE("\tEnabling layer: %s", layer_names[i]);
+    }
+
+  } else {
+    createInfo.ppEnabledLayerNames = NULL;
   }
 
-  for (uint32_t i = 0; i < createInfo.enabledLayerCount; i++) {
-    MSIC_VERBOSE("\tEnabling layer: %s", layer_names[i]);
+  if (msic_enable_validation) {
+    VkDebugUtilsMessengerCreateInfoEXT debug_create_info = {0};
+    msic_populate_debug_messenger_create_info(&debug_create_info);
+    createInfo.pNext = &debug_create_info; 
   }
+
   
   MSIC_VK_CALL(vkCreateInstance(&createInfo, NULL, &core->instance));
 
@@ -323,6 +398,12 @@ bool msic_default_phys_device_suitable(VkPhysicalDevice device, uint32_t *num_qu
     }
   }
 
+  MSIC_VERBOSE("\tChecking device extension support");
+  if (!msic_check_device_extension_support(device)) {
+    MSIC_VERBOSE("\tRequested device extensions not supported"); 
+    suitable = false;
+  }
+
   if (!suitable) {
     MSIC_INFO("Device %s unsuitable", props.deviceName);
     if (require_free_on_fail) free(*queue_indices);
@@ -399,4 +480,95 @@ void msic_list_phys_device_features(VkPhysicalDeviceFeatures features) {
      MSIC_VERBOSE("\tsparseResidencyAliased: %s",features.sparseResidencyAliased ? "true" : "false");
      MSIC_VERBOSE("\tvariableMultisampleRate: %s",features.variableMultisampleRate ? "true" : "false");
      MSIC_VERBOSE("\tinheritedQueries: %s",features.inheritedQueries ? "true" : "false");
+}
+
+uint32_t msic_create_device(MsicVulkanCore *core) {
+  VkDeviceCreateInfo create_info = {0};
+  create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+  create_info.pNext = NULL;
+  create_info.flags = 0;
+
+  
+  // The problem here is that the user can request different queues with different flags
+  // However, if multiple of these point to the same queue, I may not request multiple of these
+  // 
+  // The following code reduces the queue indices down to distinct ones, creates only distinct queues
+  // and then distributes the obtained VkQueue handles into core->queues so that if two requested 
+  // queues get the same queue index, the corresponding handle will be written to *both* positions
+  // in core->queues
+  // 
+  // A better option might be to increase the queueCount for duplicated queues
+  uint32_t distinct_queues_first_indices[core->num_device_queue_indices];
+  uint32_t queue_indirection_index      [core->num_device_queue_indices];
+  uint32_t distinct_queues_count = 0;
+
+  for (uint32_t i = 0; i < core->num_device_queue_indices; i++) {
+    // Check if index is already known  
+    
+    bool is_duplicate = false;
+    for (uint32_t j = 0; j < distinct_queues_count; j++) {
+      if (core->device_queue_indices[distinct_queues_first_indices[j]] == core->device_queue_indices[i]) {
+        queue_indirection_index[i] = j;
+        is_duplicate = true;
+      }
+    } 
+
+    if (!is_duplicate) {
+      distinct_queues_first_indices[distinct_queues_count] = i;
+
+      queue_indirection_index[i] = distinct_queues_count;
+      distinct_queues_count++;
+    }
+  }
+  
+  uint32_t distinct_queue_indices[distinct_queues_count];
+  for (uint32_t i = 0; i < distinct_queues_count; i++) {
+    distinct_queue_indices[i] = distinct_queues_first_indices[i];
+  }
+
+  MSIC_VERBOSE("Reducing queues from %d to %d distinct queues", core->num_device_queue_indices, distinct_queues_count);
+
+  VkDeviceQueueCreateInfo queue_create_infos[distinct_queues_count];
+
+  for (uint32_t i = 0; i < distinct_queues_count; i++) {
+    queue_create_infos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queue_create_infos[i].pNext             = NULL;
+    queue_create_infos[i].flags             = 0;
+    queue_create_infos[i].queueFamilyIndex  = core->device_queue_indices[distinct_queue_indices[i]];
+    queue_create_infos[i].queueCount        = 1;
+
+    float queue_prio = 1.0f;
+    queue_create_infos[i].pQueuePriorities  = &queue_prio;
+  }
+  
+  create_info.queueCreateInfoCount = distinct_queues_count;
+  create_info.pQueueCreateInfos = queue_create_infos;
+
+  create_info.enabledLayerCount = 0;
+  create_info.ppEnabledLayerNames = NULL;
+
+  create_info.enabledExtensionCount = msic_device_extension_count;
+  
+  if (msic_device_extension_count > 0 && msic_device_extensions) {
+    create_info.ppEnabledExtensionNames = (const char * const *) *msic_device_extensions;
+  } else {
+    create_info.ppEnabledExtensionNames = NULL; 
+  }
+
+  create_info.pEnabledFeatures = &msic_required_physical_device_features;
+
+  MSIC_VK_CALL(vkCreateDevice(core->physical_device, &create_info, NULL, &core->device));
+
+  VkQueue distinct_queues[distinct_queues_count];
+
+  for (uint32_t i = 0; i < distinct_queues_count; i++) {
+    vkGetDeviceQueue(core->device, core->device_queue_indices[distinct_queue_indices[i]], 0, &(distinct_queues[i]));
+  }
+  
+  core->queues = malloc(sizeof(VkQueue) * core->num_device_queue_indices);
+  for (uint32_t i = 0; i < core->num_device_queue_indices; i++) {
+    core->queues[i] = distinct_queues[queue_indirection_index[i]];
+  }
+
+  return 0;
 }

@@ -140,7 +140,7 @@ extern VkPhysicalDeviceFeatures msic_required_physical_device_features;
 
 /**
  * Control parameter specifying how many different queue families are required
- * Must be the length of the arrow in \link msic_queue_families_flags \endlink
+ * Must be the length of the array in \link msic_queue_families_flags \endlink
  */
 extern uint32_t msic_num_queue_families;
 
@@ -150,6 +150,17 @@ extern uint32_t msic_num_queue_families;
  */
 extern uint32_t *msic_queue_families_flags;
 
+/** 
+ * Control parameter specifying number of device extensions when creating \link MsicVulkanCore.device \endlink.
+ * Must be the length of the array \link msic_device_extensions \endlink. 
+ */
+extern uint32_t msic_device_extension_count;
+
+/** 
+ * Control parameter specifying which device extensions to enable
+ * Length of the array must be written in \link msic_device_extension_count \endlink.
+ */
+extern char **msic_device_extensions;
 
 // -------------------
 // Control functions
@@ -200,7 +211,7 @@ extern uint32_t(*msic_choose_physical_device)(uint32_t, VkPhysicalDevice *, bool
 /**
  * Structure holding the core vulkan instances
  */
-typedef struct MsicVulkanCore {
+struct MsicVulkanCore {
   /**
    * Vulkan instance handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkInstance.html
    */
@@ -227,7 +238,25 @@ typedef struct MsicVulkanCore {
    * If \link msic_queue_families_flags \endlink was empty contains a single index to the first queue found.
    */
   uint32_t *device_queue_indices;
-} MsicVulkanCore;
+  
+  /**
+   * Vulkan device handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkDevice.html
+   */
+  VkDevice device;
+ 
+  /**
+   * Array of vulkan queue handles, see https://docs.vulkan.org/refpages/latest/refpages/source/VkQueue.html
+   * Length of array is equal to the value in \link num_device_queue_indices \endlink.
+   *
+   * Will be matched by index to requested queues in \link msic_queue_families_flags \endlink.
+   *
+   * Note that this array might contain repeats of queues, i.e. distinct indices into this array might not correspond to distinct VkQueue handles.
+   * This is because queues can only be created once for each queue family. If multiple requested queues correspond to the same family, only one handle will be created and distributed to all indices in this array, for which the requested flags match.
+   */
+  VkQueue *queues;
+};
+
+typedef struct MsicVulkanCore MsicVulkanCore;
 
 /**
  * Dummy initializer function used to assist early development 
