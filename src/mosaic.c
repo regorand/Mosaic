@@ -2,19 +2,8 @@
 #include "core.h"
 #include <vulkan/vulkan.h>
 #include <stdint.h>
-#include <string.h>
 #include <stdarg.h>
-
-// FILE **msic_log_output_stream = &stdout; 
-// FILE **msic_err_output_stream = &stderr;
-// 
-// bool msic_log_disable_newline = false;
-// 
-// bool msic_initialized = false;
-// bool msic_enable_validation = true;
-// 
-// char **msic_layers = NULL;
-// uint32_t msic_layer_count = 0;
+#include <stdlib.h>
 
 void msic_output_log(const char *file, uint32_t line, uint32_t level, const char* message, ...) {
   if (msic_log_callback == NULL) return;
@@ -32,131 +21,17 @@ void msic_dummy_init() {
   msic_log_callback = &msic_default_log_callback;
 }
 
-bool msic_check_layer(VkLayerProperties *layer_props, uint32_t layer_count, const char * layer_name) {
-  for (uint32_t i = 0; i < layer_count; i++) {
-    if (strcmp(layer_props[i].layerName, layer_name)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-bool msic_check_layer_support(void) {
-  uint32_t layer_count;
-  MSIC_VK_CALL(vkEnumerateInstanceLayerProperties(&layer_count, NULL));
-
-  VkLayerProperties layer_props[layer_count];
-  MSIC_VK_CALL(vkEnumerateInstanceLayerProperties(&layer_count, layer_props));
- 
-  if (msic_enable_validation) {
-    if (!msic_check_layer(layer_props, layer_count, MSIC_VK_VALIDATION_LAYER_NAME)) {
-      MSIC_ERR("Vk Validation layer not supported!");
-      return false;
-    }
-  } 
-    
-  if (msic_layer_count > 0 && msic_layers == NULL) {
-    MSIC_ERR("Requested %d layers but provided no names to msic_layers**", msic_layer_count);
-    return false;
-  }
-
-  for (uint32_t i = 0; i < msic_layer_count; i++) {
-    char *layer = msic_layers[i];
-    if (!msic_check_layer(layer_props, layer_count, layer))  {
-      MSIC_ERR("Requested layer %s is not available", layer);
-      return false;
-    }
-  }
-
-  return true;
-}
-
-uint32_t msic_write_extensions(uint32_t extension_count, const char** pp_extension_names) {
-  memcpy(pp_extension_names, msic_extensions, msic_extension_count * sizeof(char *));
-
-  if (msic_enable_validation) {
-    if (extension_count < msic_extension_count + 1) {
-      MSIC_ERR("extension_count not large enough for msic_extension_count and the debug utils extension");
-      return 1;
-    }
-
-    pp_extension_names[msic_extension_count] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME; 
-  }
-
-  return 0;
-}
-
-uint32_t msic_write_layers(uint32_t layer_count, const char** pp_layer_names) {
-  memcpy(pp_layer_names, msic_layers, msic_layer_count * sizeof(char *));
-
-  if (msic_enable_validation) {
-    if (layer_count < msic_layer_count + 1) {
-      MSIC_ERR("layer_count not large enough for msic_layer_count and the validation layer");
-      return 1;
-    }
-
-    pp_layer_names[msic_layer_count] = MSIC_VK_VALIDATION_LAYER_NAME; 
-  }
-
-  return 0;
-}
-
-
-uint32_t msic_create_instance(MsicVulkanCore *core) {
-  MSIC_INFO("Creating Vulkan Instance");
-
-  VkApplicationInfo appInfo;
-  appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-  appInfo.pApplicationName = msic_application_name; 
-  appInfo.applicationVersion = msic_application_version;
-  appInfo.pEngineName = msic_engine_name;
-  appInfo.engineVersion = msic_engine_version;
-  appInfo.apiVersion = msic_vk_api_version; 
-
-  VkInstanceCreateInfo createInfo;
-  createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-  createInfo.pApplicationInfo = &appInfo;
-
-
-  createInfo.enabledExtensionCount = msic_extension_count + msic_enable_validation;
-  const char *extension_names[createInfo.enabledExtensionCount];
-  
-  if (msic_write_extensions(createInfo.enabledExtensionCount, extension_names)) {
-    MSIC_ERR("Failed to write vulkan extension names");
-    return 1;
-  }
-  
-  createInfo.ppEnabledExtensionNames = (const char * const *) extension_names;
-
-
-  createInfo.enabledLayerCount = msic_layer_count + msic_enable_validation;
-  const char *layer_names[createInfo.enabledLayerCount]; 
-
-  if (msic_write_layers(createInfo.enabledLayerCount, layer_names)) {
-    MSIC_ERR("Failed to write vulkan layer names");
-    return 1;
-  }
-  createInfo.ppEnabledLayerNames = (const char * const *) layer_names;
-
-  for (uint32_t i = 0; i < createInfo.enabledExtensionCount; i++) {
-    MSIC_VERBOSE("\tEnabling extension: %s", extension_names[i]);
-  }
-
-  for (uint32_t i = 0; i < createInfo.enabledLayerCount; i++) {
-    MSIC_VERBOSE("\tEnabling layer: %s", layer_names[i]);
-  }
-  
-  MSIC_VK_CALL(vkCreateInstance(&createInfo, NULL, &core->instance));
-
-  return 0;
-}
-
 uint32_t msic_build_vulkan_core(MsicVulkanCore *core) {
   if (!msic_initialized) {
     MSIC_ERR("Mosaic not initialized");
     return 1;
   }
+
+  core->instance =                  VK_NULL_HANDLE;
+  core->debug_messenger =           VK_NULL_HANDLE;
+  core->physical_device =           VK_NULL_HANDLE;
+  core->num_device_queue_indices =  0;
+  core->device_queue_indices =      NULL;
 
   MSIC_INFO("Loading vulkan");
 
@@ -166,15 +41,54 @@ uint32_t msic_build_vulkan_core(MsicVulkanCore *core) {
   }
 
   uint32_t res = msic_create_instance(core);
-  if (res) return res;
+  if (res) {
+    MSIC_ERR("Aborting");
+    return res;
+  }
 
   if (msic_enable_validation) {
     MSIC_INFO("Enabling vulkan debug messenger");
-    msic_setup_debug_messenger(core);
-    if (res) return res;
+    res = msic_setup_debug_messenger(core);
+    if (res) {
+      MSIC_ERR("Aborting");
+      return res;
+    }
+  }
+  
+  MSIC_INFO("Creating physical device");
+  res = msic_create_physical_device(core);
+  if (res) {
+    MSIC_ERR("Aborting");
+    return res;
   }
 
   MSIC_INFO("Finished loading vulkan core");
   return 0;
 }
 
+
+uint32_t msic_destroy_vulkan_core(MsicVulkanCore *core) {
+  if (core->device_queue_indices != NULL) {
+    free(core->device_queue_indices);
+  }
+
+
+  if (msic_enable_validation && core->debug_messenger != VK_NULL_HANDLE) {
+    MSIC_INFO("Destroying debug messenger");
+
+    PFN_vkDestroyDebugUtilsMessengerEXT func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(core->instance, "vkDestroyDebugUtilsMessengerEXT");
+    if (func == NULL) {
+      MSIC_ERR("Failed to find proc address for vkDestroyDebugUtilsMessengerEXT");
+      return 1;
+    }
+
+    func(core->instance, core->debug_messenger, NULL);
+  }
+
+  if (core->instance != VK_NULL_HANDLE) {
+    MSIC_INFO("Destroying vulkan instance");
+    vkDestroyInstance(core->instance, NULL);
+  }
+
+  return 0;
+}

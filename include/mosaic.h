@@ -21,17 +21,6 @@ extern "C" {
  */ 
 extern const char *msic_severity_strings[]; 
 
-/**
- * Function pointer for callback for mosaic logs. 
- * Can be set by user to receive mosaic log output.
- *
- * @param: Filename provided by __FILE__ macro
- * @param: Line number provided by __LINE__
- * @param: Log message
- * @param: Message severity, can be compared to the MSIC_SEVERITY_<severity> macros with severities: VERBOSE, INFO, WARN and ERR. 
- *          MSIC_SEVERITY_ERR is the highest value.
- */
-extern void (*msic_log_callback)(const char*, uint32_t, const char*, uint32_t);
 
 /**
  * Specifies which log level will be written by the default log callback 
@@ -132,11 +121,78 @@ extern const char* msic_engine_name;
 extern uint32_t msic_engine_version;
 
 /**
- * Control parameters specifing the vulkan api version, see https://docs.vulkan.org/refpages/latest/refpages/source/VkInstanceCreateInfo.html
+ * Control parameter specifing the vulkan api version, see https://docs.vulkan.org/refpages/latest/refpages/source/VkInstanceCreateInfo.html
 
  */
 extern uint32_t msic_vk_api_version;
 
+/**
+ *
+ */
+extern int32_t msic_physical_device_type;
+
+/**
+ * Control parameter specifying the required physical device feature set.
+ *
+ * Requires any feature set to `true` to be supported by chosen physical device
+ */
+extern VkPhysicalDeviceFeatures msic_required_physical_device_features;
+
+/**
+ * Control parameter specifying how many different queue families are required
+ * Must be the length of the arrow in \link msic_queue_families_flags \endlink
+ */
+extern uint32_t msic_num_queue_families;
+
+/**
+ * Control parameter array of uint32_t, each specifying required queue family flags
+ * Length of the array must be written in \link msic_num_queue_families \endlink
+ */
+extern uint32_t *msic_queue_families_flags;
+
+
+// -------------------
+// Control functions
+// -------------------
+
+/**
+ * Control function pointer for callback for mosaic logs. 
+ * Can be set by user to receive mosaic log output.
+ *
+ * @param: Filename provided by __FILE__ macro
+ * @param: Line number provided by __LINE__
+ * @param: Log message
+ * @param: Message severity, can be compared to the MSIC_SEVERITY_<severity> macros with severities: VERBOSE, INFO, WARN and ERR. 
+ *          MSIC_SEVERITY_ERR is the highest value.
+ */
+extern void (*msic_log_callback)(const char*, uint32_t, const char*, uint32_t);
+
+
+/**
+ * Control function pointer for physical device suitability check.
+ * Mosaic will set a default function for this which can be controlled using various control parameters which each with `msic_physical_device`. 
+ *
+ * For most applications, the default and its control parameters should be enough. 
+ * This control function exists in case more fine grained control over device suitability is needed. 
+ *
+ * @param: Device handle which is to be tested for suitability, see https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDevice.html
+ * @returns: bool value indicating whether the device is suitable
+ */
+extern bool (*msic_phys_device_suitable)(VkPhysicalDevice, uint32_t *, uint32_t **);
+
+/** 
+ * Control function pointer which chooses the physical device
+ * Mosaic provides a default implementation which always chooses the first valid physical device. 
+ *
+ * For better control over which physical device to choose provide the pointer to a different function here
+ *
+ * @param: total count of devices, gives array lenghts of other two parameters
+ * @param: array of device handles, see https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDevice.html
+ * @param: array of bools, specifying whether the index matched device handle is suitable
+ *
+ * @returns: Index of chosen device or UINT32_MAX on failure
+ */
+extern uint32_t(*msic_choose_physical_device)(uint32_t, VkPhysicalDevice *, bool *); 
 // -------------------
 // State and functions
 // -------------------
@@ -154,6 +210,23 @@ typedef struct MsicVulkanCore {
    * Vulkan debug messenger handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkDebugUtilsMessengerEXT.html
    */
   VkDebugUtilsMessengerEXT debug_messenger;
+
+  /**
+   * Vulkan physical device handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDevice.html
+   */
+  VkPhysicalDevice physical_device;
+
+  /**
+   * Length of \link device_queue_indices \endlink array. 
+   * Will match \link msic_num_queue_families \endlink control parameter if it is greater than zero. 
+   */
+  uint32_t num_device_queue_indices;
+
+  /**
+   * Array holding the indices to queue families as required by \link msic_queue_families_flags \endlink.
+   * If \link msic_queue_families_flags \endlink was empty contains a single index to the first queue found.
+   */
+  uint32_t *device_queue_indices;
 } MsicVulkanCore;
 
 /**
@@ -166,10 +239,19 @@ void msic_dummy_init(void);
  * Builds the vulkan core.
  * Makes decisions based on how the control parameters are set.
  *
- * @param[core]: Pointer to a `MsicVulkanCore` which will be filled with the vulkan handles
+ * @param[core]: Pointer to a \link MsicVulkanCore \endlink which will be filled with the vulkan handles
+ * @returns: Exit status, any non-zero value indicates an error
  */
 uint32_t msic_build_vulkan_core(MsicVulkanCore *core);
     
+/**
+ * Destroys the given vulkan core.
+ *
+ * @param[core]: Pointer to a \link MsicVulkanCore \endlink instance with valid vulkan handles which will be destroyed
+ * @returns: Exit status, any non-zero value indicates an error
+ */
+uint32_t msic_destroy_vulkan_core(MsicVulkanCore *core);
+
 #ifdef __cplusplus
 }
 #endif
