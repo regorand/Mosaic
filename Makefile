@@ -4,12 +4,13 @@ INC=-I${VULKAN_SDK}/include -I./include
 LIB=-lvulkan
 
 DOCS_FILES = docs/manual/index.dox Doxyfile
-AUXFILES = $(DOCS_FILES)
+AUXFILES = $(DOCS_FILES) $(TAGS_FILE)
 SRC_DIR = src
 INCL_DIR = include
 PROJDIRS = $(SRC_DIR) $(INCL_DIR) 
 SPLDIRS  = samples
 
+TAGS = tags
 DOCS = docs/html/index.html
 
 SRCFILES = $(shell find $(PROJDIRS) -type f -name "*.c")
@@ -27,7 +28,7 @@ SPLOBJFILES = $(patsubst samples/%,bin/objects/%,$(patsubst %.c,%.o,$(SPLFILES))
 SAMPLES = $(patsubst samples/%,bin/%,$(patsubst %.c,%,$(SPLFILES)))
 
 
-.PHONY: all clean todolist samples
+.PHONY: all clean todolist samples 
 
 WARNINGS := -Wall -Wextra -pedantic -Wshadow -Wpointer-arith -Wcast-align \
             -Wwrite-strings -Wmissing-prototypes -Wmissing-declarations \
@@ -35,7 +36,9 @@ WARNINGS := -Wall -Wextra -pedantic -Wshadow -Wpointer-arith -Wcast-align \
             -Wconversion -Wstrict-prototypes
 CFLAGS := -g -std=gnu99 $(WARNINGS)
 
-all: libmosaic.a samples
+all: libmosaic.a samples docs tags
+
+code: libmosaic.a samples
 
 libmosaic.a: $(OBJFILES)
 	@ar r bin/libmosaic.a $?
@@ -44,13 +47,15 @@ clean:
 	-@$(RM) $(wildcard $(OBJFILES) $(DEPFILES) $(SPLOBJFILES) $(SAMPLES) bin/libmosaic.a)
 	-@$(RM) -r bin/objects
 
+clean-all: clean clean-docs
+
 todolist:
 	# Seemingly broken at this moment
 	-@for file in $(ALLFILES:Makefile=); do fgrep -H -e TODO -e FIXME $$file; done; true
 
 bin/objects/%.o: src/%.c Makefile | bin/objects
-	@$(CC) $(CFLAGS) -MMD -MP -c $< -o $@ $(INC)
 	$(info compiling $@)
+	@$(CC) $(CFLAGS) -MMD -MP -c $< -o $@ $(INC)
 
 samples: $(SAMPLES)
 
@@ -72,4 +77,9 @@ $(DOCS): $(DOCS_FILES) $(PUBL_HDR_FILES)
 
 clean-docs: 
 	$(info Cleaning docs)
-	@rm -rf docs/html docs/latex 
+	@$(RM) -rf docs/html docs/latex 
+
+# tags file is just called "tags", so this target can be called with "make tags"
+$(TAGS): $(HDRFILES) $(SRCFILES)
+	$(info Generating Tags)
+	@ctags -R src/ include/
