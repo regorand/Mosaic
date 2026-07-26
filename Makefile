@@ -1,7 +1,6 @@
 # Basic Makefile structure taken from this tutorial http://wiki.osdev.org/Makefile
 
-INC=-I${VULKAN_SDK}/include -I./include 
-LIB=-lvulkan
+libs=vulkan glfw3
 
 DOCS_FILES = docs/manual/index.dox Doxyfile
 AUXFILES = $(DOCS_FILES) $(TAGS_FILE)
@@ -34,14 +33,22 @@ WARNINGS := -Wall -Wextra -pedantic -Wshadow -Wpointer-arith -Wcast-align \
             -Wwrite-strings -Wmissing-prototypes -Wmissing-declarations \
             -Wredundant-decls -Wnested-externs -Winline -Wno-long-long \
             -Wconversion -Wstrict-prototypes
+
 CFLAGS := -g -std=gnu99 $(WARNINGS)
+
+CFLAGS += -I./include
+CFLAGS += $(shell pkg-config --cflags $(libs)) 
+
+$(info $(CFLAGS))
+
+LDFLAGS = $(shell pkg-config --libs $(libs))
 
 all: libmosaic.a samples docs tags
 
 code: libmosaic.a samples
 
 libmosaic.a: $(OBJFILES)
-	@ar r bin/libmosaic.a $?
+	@$(AR) r bin/libmosaic.a $?
 
 clean:
 	-@$(RM) $(wildcard $(OBJFILES) $(DEPFILES) $(SPLOBJFILES) $(SAMPLES) bin/libmosaic.a)
@@ -55,15 +62,15 @@ todolist:
 
 bin/objects/%.o: src/%.c Makefile | bin/objects
 	$(info compiling $@)
-	@$(CC) $(CFLAGS) -MMD -MP -c $< -o $@ $(INC)
+	@$(CC) $(CFLAGS) -MMD -MP -c $< -o $@ 
 
 samples: $(SAMPLES)
 
 bin/%: bin/objects/%.o libmosaic.a
-	@$(CC) -o $@ $< bin/libmosaic.a $(LIB)
+	@$(CC) -o $@ $< bin/libmosaic.a $(LDFLAGS)
 
 bin/objects/%.o: samples/%.c Makefile | bin/objects
-	@$(CC) $(CFLAGS) -c $< -o $@ $(INC)
+	@$(CC) $(CFLAGS) -c $< -o $@ 
 	$(info compiling $@)
 
 bin/objects: 
