@@ -39,8 +39,6 @@ CFLAGS := -g -std=gnu99 $(WARNINGS)
 CFLAGS += -I./include
 CFLAGS += $(shell pkg-config --cflags $(libs)) 
 
-$(info $(CFLAGS))
-
 LDFLAGS = $(shell pkg-config --libs $(libs))
 
 all: libmosaic.a samples docs tags
