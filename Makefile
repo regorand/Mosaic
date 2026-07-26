@@ -40,6 +40,7 @@ CFLAGS += -I./include
 CFLAGS += $(shell pkg-config --cflags $(libs)) 
 
 LDFLAGS = $(shell pkg-config --libs $(libs))
+LDFLAGS += -lm
 
 all: libmosaic.a samples docs tags
 

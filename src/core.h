@@ -24,6 +24,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL msic_vk_message_callback(
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
     void* pUserData);
 
+void msic_glfw_callback(int error_code, const char* message);
+
 bool msic_check_layer(VkLayerProperties *layer_props, uint32_t layer_count, const char * layer_name); 
 bool msic_check_layer_support(void); 
 
@@ -42,11 +44,16 @@ uint32_t msic_create_instance(MsicVulkanCore *core);
 uint32_t msic_setup_debug_messenger(MsicVulkanCore *core);
 void msic_populate_debug_messenger_create_info(VkDebugUtilsMessengerCreateInfoEXT *create_info);
 
+uint32_t msic_init_glfw(void); 
+
+uint32_t msic_create_windows(MsicVulkanCore *core);
+uint32_t msic_create_surfaces(MsicVulkanCore *core);
+
 uint32_t msic_create_physical_device(MsicVulkanCore *core);
 
 uint32_t msic_create_device(MsicVulkanCore *core);
 
-bool msic_default_phys_device_suitable(VkPhysicalDevice device, uint32_t *num_queue_indices, uint32_t **queue_indices);
+bool msic_default_phys_device_suitable(VkPhysicalDevice device, uint32_t *num_queue_indices, uint32_t **queue_indices, MsicVulkanCore *core);
 
 uint32_t msic_default_choose_physical_device(uint32_t device_count, VkPhysicalDevice *devices, bool *suitable);
 

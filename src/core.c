@@ -1,10 +1,12 @@
 #include "core.h"
 #include "mosaic.h"
+
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_enum_string_helper.h>
+#include <GLFW/glfw3.h>
 
 void msic_default_log_callback(const char *file, uint32_t line, const char *message, uint32_t severity) {
   if (severity >= msic_log_level) {
@@ -25,6 +27,10 @@ VKAPI_ATTR VkBool32 VKAPI_CALL msic_vk_message_callback(
   msic_output_log("vk validation", 0, msic_severity, pCallbackData->pMessage);
 
   return VK_FALSE;
+}
+
+void msic_glfw_callback(int error_code, const char* message) {
+  msic_output_log("glfw error", 0, MSIC_SEVERITY_ERR, "glfw error code: %d: %s", error_code, message); 
 }
 
 void msic_populate_debug_messenger_create_info(VkDebugUtilsMessengerCreateInfoEXT *create_info) {
@@ -119,6 +125,13 @@ bool msic_check_extension_support(void) {
     return false;
   }
 
+  if (!msic_headless) {
+    if (!msic_check_extension(extension_props, extension_count, VK_KHR_SURFACE_EXTENSION_NAME)) {
+      MSIC_ERR("VK_KHR_SURFACE extensions not supported!");
+      return false;
+    }
+  } 
+
   for (uint32_t i = 0; i < msic_extension_count; i++) {
     char *extension = msic_extensions[i];
     if (!msic_check_extension(extension_props, extension_count, extension))  {
@@ -155,14 +168,29 @@ bool msic_check_device_extension_support(VkPhysicalDevice device) {
 uint32_t msic_write_extensions(uint32_t extension_count, const char** pp_extension_names) {
   memcpy(pp_extension_names, msic_extensions, msic_extension_count * sizeof(char *));
 
-  if (msic_enable_validation) {
-    if (extension_count < msic_extension_count + 1) {
-      MSIC_ERR("extension_count not large enough for msic_extension_count and the debug utils extension");
-      return 1;
-    }
+  uint32_t extra_extensions = 0;
 
-    pp_extension_names[msic_extension_count] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME; 
+  if (msic_enable_validation) extra_extensions++;
+  if (!msic_headless)         extra_extensions++;
+
+  if (extension_count < msic_extension_count + extra_extensions) {
+    // TODO could give better error message -> which extensions can be added automatically, which are, etc.
+    MSIC_ERR("extension_count not large enough to account for msic_extension_count and automatically added extensions");
+    return 1;
   }
+
+  uint32_t current_extra_offset = 0;
+
+  if (msic_enable_validation) {
+    pp_extension_names[msic_extension_count + current_extra_offset] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME; 
+    current_extra_offset++;
+  }
+
+  if (!msic_headless) {
+    pp_extension_names[msic_extension_count + current_extra_offset] = VK_KHR_SURFACE_EXTENSION_NAME; 
+    current_extra_offset++;
+   }
+
 
   return 0;
 }
@@ -199,7 +227,12 @@ uint32_t msic_create_instance(MsicVulkanCore *core) {
   createInfo.pApplicationInfo = &appInfo;
 
 
-  createInfo.enabledExtensionCount = msic_extension_count + msic_enable_validation;
+  
+  createInfo.enabledExtensionCount = msic_extension_count;
+  
+  if (msic_enable_validation) createInfo.enabledExtensionCount++;
+  if (!msic_headless)         createInfo.enabledExtensionCount++;
+
   const char *extension_names[createInfo.enabledExtensionCount];
 
   if (createInfo.enabledExtensionCount > 0) {
@@ -218,6 +251,8 @@ uint32_t msic_create_instance(MsicVulkanCore *core) {
   } else {
     createInfo.ppEnabledExtensionNames = NULL;
   }
+
+
 
   createInfo.enabledLayerCount = msic_layer_count + msic_enable_validation;
   const char *layer_names[createInfo.enabledLayerCount]; 
@@ -238,6 +273,7 @@ uint32_t msic_create_instance(MsicVulkanCore *core) {
     createInfo.ppEnabledLayerNames = NULL;
   }
 
+
   if (msic_enable_validation) {
     VkDebugUtilsMessengerCreateInfoEXT debug_create_info = {0};
     msic_populate_debug_messenger_create_info(&debug_create_info);
@@ -247,6 +283,66 @@ uint32_t msic_create_instance(MsicVulkanCore *core) {
   
   MSIC_VK_CALL(vkCreateInstance(&createInfo, NULL, &core->instance));
 
+  return 0;
+}
+
+uint32_t msic_init_glfw() {
+  if (!glfwInit()) {
+    MSIC_ERR("Failed to initialize glfw");
+    return 1;
+  }
+  
+  glfwSetErrorCallback(&msic_glfw_callback);
+
+  return 0;
+}
+
+uint32_t msic_create_windows(MsicVulkanCore *core) {
+  int glfw_supported = glfwVulkanSupported();
+  if (glfw_supported != GLFW_TRUE) {
+    MSIC_ERR("GLFW support query returned %d", glfw_supported);
+    return 1;
+  }
+
+  core->windows = malloc(msic_num_windows * sizeof(GLFWwindow *));
+
+  for (uint32_t i = 0; i < msic_num_windows; i++) {
+    glfwDefaultWindowHints();
+
+    // No OpenGL context
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
+    // XXX temporary, resizing not implemented yet
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+
+    if (msic_window_hint_counts != NULL) {
+      for (uint32_t j = 0; j < msic_window_hint_counts[i]; j++) {
+        glfwWindowHint(msic_window_hints[i][j], msic_window_hint_values[i][j]);
+      }
+    }
+
+    GLFWwindow *w = glfwCreateWindow(800, 500, msic_application_name, NULL, NULL);
+    if (w == NULL) {
+      MSIC_ERR("Encountered fatal error creating glfw window, aborting");
+      return 1;
+    }
+    core->windows[i] = w;
+  }
+
+  core->num_windows = msic_num_windows;
+  MSIC_VERBOSE("Created %d windows", core->num_windows);
+
+  return 0;
+}
+
+uint32_t msic_create_surfaces(MsicVulkanCore *core) {
+  core->surfaces = malloc(msic_num_windows * sizeof(VkSurfaceKHR));
+
+  for (uint32_t i = 0; i < msic_num_windows; i++) {
+    MSIC_VK_CALL(glfwCreateWindowSurface(core->instance, core->windows[i], NULL, &core->surfaces[i])); 
+  }
+
+  MSIC_VERBOSE("Created %d surfaces", core->num_windows);
   return 0;
 }
 
@@ -272,10 +368,8 @@ uint32_t msic_create_physical_device(MsicVulkanCore *core) {
   uint32_t num_suitable = 0;
 
   for (uint32_t i = 0; i < device_count; i++) {
-    // uint32_t num_queue_indices = 0;
-    // uint32_t *queue_indices = NULL;
+    suitable[i] = (*msic_phys_device_suitable)(devices[i], &(arr_num_queue_indices[i]), &(arr_queue_indices[i]), core);
 
-    suitable[i] = (*msic_phys_device_suitable)(devices[i], &(arr_num_queue_indices[i]), &(arr_queue_indices[i]));
     if (suitable[i]) num_suitable++;
   }
 
@@ -306,7 +400,11 @@ uint32_t msic_create_physical_device(MsicVulkanCore *core) {
   return 0;
 }
 
-bool msic_default_phys_device_suitable(VkPhysicalDevice device, uint32_t *num_queue_indices, uint32_t **queue_indices) {
+bool msic_default_phys_device_suitable(VkPhysicalDevice device, 
+                                        uint32_t *num_queue_indices, 
+                                        uint32_t **queue_indices, 
+                                        MsicVulkanCore *core) {
+
   VkPhysicalDeviceProperties props;
   vkGetPhysicalDeviceProperties(device, &props);
 
@@ -355,7 +453,27 @@ bool msic_default_phys_device_suitable(VkPhysicalDevice device, uint32_t *num_qu
   // --------------
   uint32_t queue_families_count = 0;
   vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_families_count, NULL);
-  
+   
+  if (!msic_headless) {
+    for (uint32_t i = 0; i < queue_families_count; i++) {
+      bool supports_all = true;
+
+      for (uint32_t j = 0; j < core->num_windows; j++) {
+        VkBool32 present_support = false;
+
+        MSIC_VK_CALL(vkGetPhysicalDeviceSurfaceSupportKHR(device, i, core->surfaces[j], &present_support));
+
+        supports_all &= present_support; 
+      } 
+
+      if (supports_all) {
+        core->present_queue_index = i;
+        break;
+      }
+    }
+  }
+
+
   bool require_free_on_fail = false;
   if (queue_families_count == 0) {
     MSIC_INFO("Device %s has no queue families", props.deviceName);
@@ -376,10 +494,16 @@ bool msic_default_phys_device_suitable(VkPhysicalDevice device, uint32_t *num_qu
       *queue_indices = malloc(sizeof(uint32_t) * msic_num_queue_families);
       require_free_on_fail = true;
 
+      
+
+      // For all requested family flags...
       for (uint32_t i = 0; i < msic_num_queue_families; i++) {
         bool found_queue_family = false;
 
+        // ... loop over all available queue families...
         for (uint32_t j = 0; j < queue_families_count; j++) {
+
+          // ... and check if the required flags are supported.
           if ((msic_queue_families_flags[i] & queue_families[j].queueFlags) == msic_queue_families_flags[i]) {
             (*queue_indices)[i] = j;   
 
@@ -498,16 +622,26 @@ uint32_t msic_create_device(MsicVulkanCore *core) {
   // in core->queues
   // 
   // A better option might be to increase the queueCount for duplicated queues
-  uint32_t distinct_queues_first_indices[core->num_device_queue_indices];
-  uint32_t queue_indirection_index      [core->num_device_queue_indices];
+
+  uint32_t num_queues = core->num_device_queue_indices;
+
+  if (!msic_headless) num_queues++;
+
+  uint32_t queue_indices[num_queues];
+  memcpy(queue_indices, core->device_queue_indices, core->num_device_queue_indices * sizeof(uint32_t));
+
+  if (!msic_headless) queue_indices[core->num_device_queue_indices] = core->present_queue_index;
+  
+  uint32_t distinct_queues_first_indices[num_queues];
+  uint32_t queue_indirection_index      [num_queues];
   uint32_t distinct_queues_count = 0;
 
-  for (uint32_t i = 0; i < core->num_device_queue_indices; i++) {
+  for (uint32_t i = 0; i < num_queues; i++) {
     // Check if index is already known  
     
     bool is_duplicate = false;
     for (uint32_t j = 0; j < distinct_queues_count; j++) {
-      if (core->device_queue_indices[distinct_queues_first_indices[j]] == core->device_queue_indices[i]) {
+      if (queue_indices[distinct_queues_first_indices[j]] == queue_indices[i]) {
         queue_indirection_index[i] = j;
         is_duplicate = true;
       }
@@ -526,7 +660,7 @@ uint32_t msic_create_device(MsicVulkanCore *core) {
     distinct_queue_indices[i] = distinct_queues_first_indices[i];
   }
 
-  MSIC_VERBOSE("Reducing queues from %d to %d distinct queues", core->num_device_queue_indices, distinct_queues_count);
+  MSIC_VERBOSE("Reducing queues from %d to %d distinct queues", num_queues, distinct_queues_count);
 
   VkDeviceQueueCreateInfo queue_create_infos[distinct_queues_count];
 
@@ -534,7 +668,7 @@ uint32_t msic_create_device(MsicVulkanCore *core) {
     queue_create_infos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
     queue_create_infos[i].pNext             = NULL;
     queue_create_infos[i].flags             = 0;
-    queue_create_infos[i].queueFamilyIndex  = core->device_queue_indices[distinct_queue_indices[i]];
+    queue_create_infos[i].queueFamilyIndex  = queue_indices[distinct_queue_indices[i]];
     queue_create_infos[i].queueCount        = 1;
 
     float queue_prio = 1.0f;
@@ -562,12 +696,16 @@ uint32_t msic_create_device(MsicVulkanCore *core) {
   VkQueue distinct_queues[distinct_queues_count];
 
   for (uint32_t i = 0; i < distinct_queues_count; i++) {
-    vkGetDeviceQueue(core->device, core->device_queue_indices[distinct_queue_indices[i]], 0, &(distinct_queues[i]));
+    vkGetDeviceQueue(core->device, queue_indices[distinct_queue_indices[i]], 0, &(distinct_queues[i]));
   }
   
-  core->queues = malloc(sizeof(VkQueue) * core->num_device_queue_indices);
-  for (uint32_t i = 0; i < core->num_device_queue_indices; i++) {
+  core->queues = malloc(sizeof(VkQueue) * num_queues);
+  for (uint32_t i = 0; i < num_queues; i++) {
     core->queues[i] = distinct_queues[queue_indirection_index[i]];
+  }
+
+  if (!msic_headless) {
+    core->present_queue_index = num_queues;
   }
 
   return 0;

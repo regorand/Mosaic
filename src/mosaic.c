@@ -30,10 +30,14 @@ uint32_t msic_build_vulkan_core(MsicVulkanCore *core) {
   core->instance                  = VK_NULL_HANDLE;
   core->debug_messenger           = VK_NULL_HANDLE;
   core->physical_device           = VK_NULL_HANDLE;
+  core->windows                   = NULL;
+  core->surfaces                  = NULL;
+  core->num_windows               = 0;
   core->num_device_queue_indices  = 0;
   core->device_queue_indices      = NULL;
   core->device                    = VK_NULL_HANDLE; 
   core->queues                    = NULL;
+  core->present_queue_index       = 0;
 
   MSIC_INFO("Loading vulkan");
 
@@ -49,34 +53,33 @@ uint32_t msic_build_vulkan_core(MsicVulkanCore *core) {
     return 1;
   }
 
-  uint32_t res = msic_create_instance(core);
-  if (res) {
-    MSIC_ERR("Aborting");
-    return res;
-  }
+  MSIC_CALL(msic_create_instance(core));
 
   if (msic_enable_validation) {
     MSIC_INFO("Enabling vulkan debug messenger");
-    res = msic_setup_debug_messenger(core);
-    if (res) {
-      MSIC_ERR("Aborting");
-      return res;
-    }
+    MSIC_CALL(msic_setup_debug_messenger(core));
   }
   
-  MSIC_INFO("Creating physical device");
-  res = msic_create_physical_device(core);
-  if (res) {
-    MSIC_ERR("Aborting");
-    return res;
+  if (!msic_headless) {
+    MSIC_INFO("Running mosaic with gui");
+   
+    MSIC_INFO("Initializing glfw");
+    MSIC_CALL(msic_init_glfw());
+
+    MSIC_INFO("Creating windows");
+    MSIC_CALL(msic_create_windows(core));
+
+    MSIC_INFO("Creating surfaces");
+    MSIC_CALL(msic_create_surfaces(core));
+  } else {
+    MSIC_INFO("Running mosaic headless");
   }
 
+  MSIC_INFO("Creating physical device");
+  MSIC_CALL(msic_create_physical_device(core));
+
   MSIC_INFO("Creating device");
-  res = msic_create_device(core);
-  if (res) {
-    MSIC_ERR("Aborting");
-    return res;
-  }
+  MSIC_CALL(msic_create_device(core));
 
   MSIC_INFO("Finished loading vulkan core");
   return 0;
@@ -89,6 +92,24 @@ uint32_t msic_destroy_vulkan_core(MsicVulkanCore *core) {
     free(core->queues);
   }
 
+  if (core->surfaces != NULL) {
+    MSIC_VERBOSE("Destroying surfaces and freeing handle array");
+    for (uint32_t i = 0; i < core->num_windows; i++) {
+      vkDestroySurfaceKHR(core->instance, core->surfaces[i], NULL);
+    }
+    free(core->surfaces);
+  }
+
+  if (!msic_headless) {
+    MSIC_VERBOSE("Terminating glfw");
+    glfwTerminate();
+  }
+
+  if (core->windows != NULL) {
+    MSIC_VERBOSE("Freeing window pointer array");
+    free(core->windows);
+  }
+
   if (core->device != VK_NULL_HANDLE) {
     MSIC_INFO("Destroying device");
     vkDestroyDevice(core->device, NULL);
@@ -98,7 +119,6 @@ uint32_t msic_destroy_vulkan_core(MsicVulkanCore *core) {
     MSIC_VERBOSE("Freeing device queue indices array");
     free(core->device_queue_indices);
   }
-
 
   if (msic_enable_validation && core->debug_messenger != VK_NULL_HANDLE) {
     MSIC_INFO("Destroying debug messenger");

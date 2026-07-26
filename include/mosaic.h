@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_enum_string_helper.h>
 #include <stdarg.h>
+#include <GLFW/glfw3.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,6 +50,17 @@ void msic_output_log(const char *file, uint32_t line, uint32_t level, const char
 #define MSIC_ERR(s, ...) msic_output_log(__FILE__, __LINE__, MSIC_SEVERITY_ERR, s, ##__VA_ARGS__);
 
 /**
+ *
+ */
+#define MSIC_CALL(f) { \
+  uint32_t res = (f); \
+  if (res) { \
+    MSIC_ERR("mosaic error: aborting!"); \
+    return res; \
+  } \
+}
+
+/**
  * Wrapper macro for vulkan API calls which logs errors generated and returns the error code
  *
  * @param [f]: Vulkan API call
@@ -60,6 +72,120 @@ void msic_output_log(const char *file, uint32_t line, uint32_t level, const char
     return res; \
   } \
 }
+
+// -------------------
+// State and functions
+// -------------------
+
+/**
+ * Structure holding the core vulkan instances
+ */
+struct MsicVulkanCore {
+  /**
+   * Vulkan instance handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkInstance.html
+   */
+  VkInstance instance;
+
+  /**
+   * Vulkan debug messenger handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkDebugUtilsMessengerEXT.html
+   */
+  VkDebugUtilsMessengerEXT debug_messenger;
+
+  /**
+   * Vulkan physical device handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDevice.html
+   */
+  VkPhysicalDevice physical_device;
+
+  /**
+   * Length of \link device_queue_indices \endlink array. 
+   * Will match \link msic_num_queue_families \endlink control parameter if it is greater than zero. 
+   */
+  uint32_t num_device_queue_indices;
+
+  /**
+   * Array holding the indices to queue families as required by \link msic_queue_families_flags \endlink.
+   * If \link msic_queue_families_flags \endlink was empty contains a single index to the first queue found.
+   */
+  uint32_t *device_queue_indices;
+  
+  /**
+   * Vulkan device handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkDevice.html
+   */
+  VkDevice device;
+ 
+
+  /**
+   * Array of vulkan queue handles, see https://docs.vulkan.org/refpages/latest/refpages/source/VkQueue.html
+   * Length of array is equal to the value in \link num_device_queue_indices \endlink.
+   *
+   * Will be matched by index to requested queues in \link msic_queue_families_flags \endlink.
+   *
+   * Note that this array might contain repeats of queues, i.e. distinct indices into this array might not correspond to distinct VkQueue handles.
+   * This is because queues can only be created once for each queue family. If multiple requested queues correspond to the same family, only one handle will be created and distributed to all indices in this array, for which the requested flags match.
+   */
+  VkQueue *queues;
+
+  /**
+   * Index of the queue guaranteed to support presentation.
+   * Will only be set to a valid value if \link msic_headless \endlink is false.
+   *
+   * Indexes into the \link MsicVulkanCore.queues \endlink array.
+   */
+  uint32_t present_queue_index;
+
+  /**
+   * Indicates number of created surfaces and specifies the length of the \link MsicVulkanCore.surfaces \endlink array.
+   *
+   * Value is equal to \link msic_num_windows \endlink control parameter at the time of calling. 
+   *
+   * Will always be zero if \link msic_headless \endlink is true.
+   */
+  uint32_t num_windows;
+
+  /**
+   * Array holding the requested surface handles. Length of the array is specified in \link MsicVulkanCore.num_windows \endlink.
+   *
+   * Will always be zero if \link msic_headless \endlink is true.
+   *
+   * Surfaces and windows are created by glfw.
+   */
+  VkSurfaceKHR *surfaces;
+  
+
+  /**
+   * Array holding pointers to the requested glfw windows. Length of array is specified in \link MsicVulkanCore.num_windows \endlink.
+   *
+   * Will always be zero if \link msic_headless \endlink is true.
+   */
+  GLFWwindow **windows;
+};
+
+typedef struct MsicVulkanCore MsicVulkanCore;
+
+/**
+ * Dummy initializer function used to assist early development 
+ * TODO will be removed later
+ */
+void msic_dummy_init(void);
+
+/**
+ * Builds the vulkan core.
+ * Makes decisions based on how the control parameters are set.
+ *
+ * @param[core]: Pointer to a \link MsicVulkanCore \endlink which will be filled with the vulkan handles
+ * @returns: Exit status, any non-zero value indicates an error
+ */
+uint32_t msic_build_vulkan_core(MsicVulkanCore *core);
+    
+/**
+ * Destroys the given vulkan core.
+ *
+ * @param[core]: Pointer to a \link MsicVulkanCore \endlink instance with valid vulkan handles which will be destroyed
+ * @returns: Exit status, any non-zero value indicates an error
+ */
+uint32_t msic_destroy_vulkan_core(MsicVulkanCore *core);
+
+
 
 // -------------------
 // control parameters
@@ -147,6 +273,8 @@ extern uint32_t msic_num_queue_families;
 /**
  * Control parameter array of uint32_t, each specifying required queue family flags
  * Length of the array must be written in \link msic_num_queue_families \endlink
+ *
+ * If no required flags are provided, i.e. the length of this array is 0, mosaic will choose the first queue it finds.
  */
 extern uint32_t *msic_queue_families_flags;
 
@@ -161,6 +289,62 @@ extern uint32_t msic_device_extension_count;
  * Length of the array must be written in \link msic_device_extension_count \endlink.
  */
 extern char **msic_device_extensions;
+
+
+/**
+ * Control parameter specifying whether vulkan is being run headless, i.e. without a window
+ */
+extern bool msic_headless;
+
+/** 
+ * Control parameter specifying the number of windows to create
+ */
+extern uint32_t msic_num_windows;
+
+// TODO need more window control parameters: title, sizes, monitors etc.
+
+
+/**
+ * Control parameter specifying the glfw window hint counts for each window.
+ * Assumed to have length \link msic_num_windows \endlink.
+ *
+ * If this is NULL but \link msic_num_windows \endlink is greather than 0, mosaic assumes no window hints for all windows.
+ */
+extern uint32_t *msic_window_hint_counts;
+
+/**
+ * Control parameter specifying the glfw window hints for each window.
+ * First index specifies window and has length \link msic_num_windows \endlink.
+ * Second index specifies the window hint and has a length specified by the corresponding window index in \link msic_window_hint_counts \endlink.
+ *
+ * Hint values are matched by index in \link msic_window_hint_values \endlink.
+ */
+extern int32_t **msic_window_hints;
+
+/**
+ * Control parameter specifying the glfw window hint values for each window.
+ * First index specifies window and has length \link msic_num_windows \endlink.
+ * Second index specifies the window hint value and has a length specified by the corresponding window index in \link msic_window_hint_counts \endlink.
+ *
+ * Hints are matched by index in \link msic_window_hints \endlink.
+ */
+extern int32_t **msic_window_hint_values;
+
+// TODO
+// surfaces, windows, swapchains
+//
+// 1. surface creation
+//    -> include glfw, use that to create surfaces, but provide overridable callback for surface creation
+//
+// 2. specify how many windows are wanted
+//
+// 3. create swapchains for each, figure out how to specify swapchain settings for each -> just array ? 
+//
+//
+//
+
+
+
 
 // -------------------
 // Control functions
@@ -189,7 +373,7 @@ extern void (*msic_log_callback)(const char*, uint32_t, const char*, uint32_t);
  * @param: Device handle which is to be tested for suitability, see https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDevice.html
  * @returns: bool value indicating whether the device is suitable
  */
-extern bool (*msic_phys_device_suitable)(VkPhysicalDevice, uint32_t *, uint32_t **);
+extern bool (*msic_phys_device_suitable)(VkPhysicalDevice, uint32_t *, uint32_t **, MsicVulkanCore *);
 
 /** 
  * Control function pointer which chooses the physical device
@@ -204,82 +388,7 @@ extern bool (*msic_phys_device_suitable)(VkPhysicalDevice, uint32_t *, uint32_t 
  * @returns: Index of chosen device or UINT32_MAX on failure
  */
 extern uint32_t(*msic_choose_physical_device)(uint32_t, VkPhysicalDevice *, bool *); 
-// -------------------
-// State and functions
-// -------------------
 
-/**
- * Structure holding the core vulkan instances
- */
-struct MsicVulkanCore {
-  /**
-   * Vulkan instance handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkInstance.html
-   */
-  VkInstance instance;
-
-  /**
-   * Vulkan debug messenger handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkDebugUtilsMessengerEXT.html
-   */
-  VkDebugUtilsMessengerEXT debug_messenger;
-
-  /**
-   * Vulkan physical device handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDevice.html
-   */
-  VkPhysicalDevice physical_device;
-
-  /**
-   * Length of \link device_queue_indices \endlink array. 
-   * Will match \link msic_num_queue_families \endlink control parameter if it is greater than zero. 
-   */
-  uint32_t num_device_queue_indices;
-
-  /**
-   * Array holding the indices to queue families as required by \link msic_queue_families_flags \endlink.
-   * If \link msic_queue_families_flags \endlink was empty contains a single index to the first queue found.
-   */
-  uint32_t *device_queue_indices;
-  
-  /**
-   * Vulkan device handle, see https://docs.vulkan.org/refpages/latest/refpages/source/VkDevice.html
-   */
-  VkDevice device;
- 
-  /**
-   * Array of vulkan queue handles, see https://docs.vulkan.org/refpages/latest/refpages/source/VkQueue.html
-   * Length of array is equal to the value in \link num_device_queue_indices \endlink.
-   *
-   * Will be matched by index to requested queues in \link msic_queue_families_flags \endlink.
-   *
-   * Note that this array might contain repeats of queues, i.e. distinct indices into this array might not correspond to distinct VkQueue handles.
-   * This is because queues can only be created once for each queue family. If multiple requested queues correspond to the same family, only one handle will be created and distributed to all indices in this array, for which the requested flags match.
-   */
-  VkQueue *queues;
-};
-
-typedef struct MsicVulkanCore MsicVulkanCore;
-
-/**
- * Dummy initializer function used to assist early development 
- * TODO will be removed later
- */
-void msic_dummy_init(void);
-
-/**
- * Builds the vulkan core.
- * Makes decisions based on how the control parameters are set.
- *
- * @param[core]: Pointer to a \link MsicVulkanCore \endlink which will be filled with the vulkan handles
- * @returns: Exit status, any non-zero value indicates an error
- */
-uint32_t msic_build_vulkan_core(MsicVulkanCore *core);
-    
-/**
- * Destroys the given vulkan core.
- *
- * @param[core]: Pointer to a \link MsicVulkanCore \endlink instance with valid vulkan handles which will be destroyed
- * @returns: Exit status, any non-zero value indicates an error
- */
-uint32_t msic_destroy_vulkan_core(MsicVulkanCore *core);
 
 #ifdef __cplusplus
 }

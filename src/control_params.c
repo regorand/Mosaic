@@ -29,7 +29,7 @@ int32_t msic_physical_device_type = -1;
 
 VkPhysicalDeviceFeatures msic_required_physical_device_features = {0};
 
-bool (*msic_phys_device_suitable)(VkPhysicalDevice, uint32_t *, uint32_t **) = &msic_default_phys_device_suitable;
+bool (*msic_phys_device_suitable)(VkPhysicalDevice, uint32_t *, uint32_t **, MsicVulkanCore *) = &msic_default_phys_device_suitable;
 
 uint32_t (*msic_choose_physical_device)(uint32_t, VkPhysicalDevice *, bool *) = &msic_default_choose_physical_device; 
 
@@ -40,3 +40,13 @@ uint32_t *msic_queue_families_flags = NULL;
 uint32_t msic_device_extension_count = 0;
 
 char **msic_device_extensions = NULL;
+
+bool msic_headless = false;
+
+uint32_t msic_num_windows = 1;
+
+uint32_t *msic_window_hint_counts = NULL;
+
+int32_t **msic_window_hints = NULL;
+
+int32_t **msic_window_hint_values = NULL;
