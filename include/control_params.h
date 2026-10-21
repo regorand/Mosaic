@@ -186,7 +186,7 @@ extern VkPresentModeKHR *msic_present_modes;
  * Must NULL or an array of length \link msic_num_windows \endlink.
  * If NULL, all image layer counts will be 1.
  */
-extern int *msic_swapchain_image_layers;
+extern uint32_t  *msic_swapchain_image_layers;
 
 /*
  * Control parameter specifying the swapchain image usage flags.

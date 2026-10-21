@@ -109,7 +109,7 @@ uint32_t msic_destroy_vulkan_core(MsicVulkanCore *core) {
 
   if (core->windows != NULL) {
     MSIC_VERBOSE("Destroying window contexts");
-
+    
     for (uint32_t i = 0; i < core->num_windows; i++) {
       if (core->windows[i].open) {
         msic_destroy_window(core, i);
@@ -157,6 +157,10 @@ void msic_destroy_window(MsicVulkanCore *core, uint32_t window_index) {
 
   w_context->open = false;
 
+  if (w_context->swapchain != NULL) {
+    destroy_swapchain(core, w_context->swapchain);
+  }
+
   if (w_context->formats != NULL) {
     free(w_context->formats);
   }
@@ -176,3 +180,6 @@ void msic_destroy_window(MsicVulkanCore *core, uint32_t window_index) {
   w_context->open = false;
 }
 
+void destroy_swapchain(MsicVulkanCore *core, VkSwapchainKHR swapchain) {
+  vkDestroySwapchainKHR(core->device, swapchain, NULL);  
+}

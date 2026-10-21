@@ -335,6 +335,7 @@ void msic_populate_empty_window_context(MsicWindowContext *w_context) {
   w_context->window        = NULL;
   w_context->formats       = NULL;
   w_context->present_modes = NULL;
+  w_context->swapchain     = NULL;
 }
 
 uint32_t msic_create_windows(MsicVulkanCore *core) {
@@ -531,52 +532,77 @@ bool msic_check_swapchain_support(MsicVulkanCore *core) {
 }
 
 uint32_t msic_create_swapchain(MsicVulkanCore *core) {
-//   for (uint32_t i = 0; i < core->num_windows; i++) {
-//     MsicWindowContext *w_context = &core->windows[i];
-// 
-//     VkSurfaceFormatKHR format     = msic_choose_swapchain_format(w_context, i);
-//     VkPresentModeKHR present_mode = msic_choose_present_mode(w_context, i);
-//     VkExtent2D extent             = msic_choose_swap_extent(w_context, i);
-// 
-//     uint32_t image_count          = msic_choose_image_count(w_context, i); 
-// 
-//     VkSwapchainCreateInfoKHR create_info;
-// 
-//     create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-//     create_info.pNext = NULL;
-//     create_info.flags = NULL;
-//     create_info.surface = w_context->surface;
-//     create_info.minImageCount = image_count;
-//     create_info.imageFormat = format.format;
-//     create_info.imageColorSpace = format.colorSpace;
-//     create_info.imageExtent = extent;
-// 
-//     if (msic_swapchain_image_layers != NULL) {
-//       create_info.imageArrayLayers = msic_swapchain_image_layers[i];
-//     } else {
-//       create_info.imageArrayLayers = 1;
-//     }
-// 
-//     if (msic_swapchain_image_usage_flags != NULL) {
-//       create_info.imageUsage = msic_swapchain_image_usage_flags[i];
-//     } else {
-//       create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-//     }
-// 
-//     VkQueue present_queue = core->queues[core->present_queue_index]; 
-//     VkQueue graphics_queue = core->queues[core->graphics_queue_index];
-// 
-//     if (present_queue == graphics_queue) {
-//       create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-//       create_info.queueFamilyIndexCount = 0;
-//       create_info.pQueueFamilyIndices = NULL;
-//     } else {
-//       uint32_t queue_indices = { present_queue };
-//       // TODO rewrite queue system -> see at msic_default_phys_device_suitable 
-//     }
-// 
-//   }
-// 
+  MSIC_VERBOSE("Creating swapchain(s)");
+  for (uint32_t i = 0; i < core->num_windows; i++) {
+    MsicWindowContext *w_context = &core->windows[i];
+    VkSurfaceCapabilitiesKHR caps = w_context->surface_capabilities;
+
+    VkSurfaceFormatKHR format     = msic_choose_swapchain_format(w_context, i);
+    VkPresentModeKHR present_mode = msic_choose_present_mode(w_context, i);
+    VkExtent2D extent             = msic_choose_swap_extent(w_context, i);
+
+    uint32_t image_count          = msic_choose_image_count(w_context, i); 
+
+    VkSwapchainCreateInfoKHR create_info;
+
+    create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    create_info.pNext = NULL;
+    create_info.flags = 0;
+    create_info.surface = w_context->surface;
+    create_info.minImageCount = image_count;
+    create_info.imageFormat = format.format;
+    create_info.imageColorSpace = format.colorSpace;
+    create_info.imageExtent = extent;
+
+    if (msic_swapchain_image_layers != NULL) {
+      create_info.imageArrayLayers = msic_swapchain_image_layers[i];
+    } else {
+      create_info.imageArrayLayers = 1;
+    }
+
+    if (msic_swapchain_image_usage_flags != NULL) {
+      create_info.imageUsage = msic_swapchain_image_usage_flags[i];
+    } else {
+      create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    }
+
+    if (core->present_graphics_match) {
+      create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+      create_info.queueFamilyIndexCount = 0;
+      create_info.pQueueFamilyIndices = NULL;
+    } else {
+      create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+      if (msic_graphics) {
+        uint32_t queue_indices[2] = { core->present_queue_index, core->graphics_queue_index };
+        uint32_t num_queues = 2;
+
+        create_info.queueFamilyIndexCount = num_queues;
+        create_info.pQueueFamilyIndices = queue_indices;
+      } else {
+        create_info.queueFamilyIndexCount = 1;
+        create_info.pQueueFamilyIndices = &core->present_queue_index;
+      }
+    }
+
+    // TODO Possible control parameter
+    create_info.preTransform = caps.currentTransform;
+    
+    // TODO Possible control parameter
+    create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+
+    create_info.presentMode = present_mode;
+
+    // TODO Possible control parameter
+    create_info.clipped = VK_TRUE;
+
+    // TODO Can allow for hot recreation of swapchain through this field ?
+    create_info.oldSwapchain = VK_NULL_HANDLE;
+
+    MSIC_VK_CALL(vkCreateSwapchainKHR(core->device, &create_info, NULL, &w_context->swapchain));
+    MSIC_VERBOSE("Successfully created swapchain for window %d", i);
+  }
+  MSIC_INFO("Created %d swapchain(s)", core->num_windows);
+
   return 0;
 }
 
@@ -714,9 +740,14 @@ uint32_t msic_create_physical_device(MsicVulkanCore *core) {
 
   MSIC_INFO("Chose device %s with index %d", props.deviceName, chosen_device_index);
   
-  core->physical_device =           devices[chosen_device_index];
-  core->num_device_queue_indices =  msic_num_extra_queue_families;
-  core->device_queue_indices =      arr_queue_indices[chosen_device_index];
+  core->physical_device          = devices[chosen_device_index];
+  core->num_device_queue_indices = msic_num_extra_queue_families;
+  if (msic_present && msic_graphics) {
+    core->present_graphics_match = arr_present_graphics_match[chosen_device_index];
+  } else {
+    core->present_graphics_match = false;
+  }
+  core->device_queue_indices     = arr_queue_indices[chosen_device_index];
 
   return 0;
 }

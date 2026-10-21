@@ -54,6 +54,7 @@ uint32_t msic_query_surface_support(MsicVulkanCore *core, MsicWindowContext *w_c
 
 bool msic_check_swapchain_support(MsicVulkanCore *core);
 uint32_t msic_create_swapchain(MsicVulkanCore *core);
+void destroy_swapchain(MsicVulkanCore *core, VkSwapchainKHR swapchain);
 
 uint32_t msic_create_physical_device(MsicVulkanCore *core);
 

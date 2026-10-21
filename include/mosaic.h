@@ -125,6 +125,11 @@ struct MsicWindowContext {
    * Pointer handle to the Glfw window object.
    */
   GLFWwindow *window;
+
+  /**
+   * Vulkan handle to the swapchain for this image
+   */
+  VkSwapchainKHR swapchain;
 };
 
 typedef struct MsicWindowContext MsicWindowContext;
@@ -192,6 +197,12 @@ struct MsicVulkanCore {
    * Indexes into the \link MsicVulkanCore.queues \endlink array.
    */
   uint32_t graphics_queue_index;
+
+  /**
+   * Convenience parameter indicating whether the present queue and the graphics queue are the same.
+   * Will always be false if \link msic_present \endlink or \link msic_graphics \endlink are false.
+   */ 
+  bool present_graphics_match;
 
   /**
    * Vulkan queue handle for the present queue.

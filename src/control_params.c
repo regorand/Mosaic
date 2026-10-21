@@ -63,6 +63,6 @@ VkSurfaceFormatKHR (*msic_choose_swapchain_format)(MsicWindowContext *, uint32_t
 VkPresentModeKHR   (*msic_choose_present_mode)(MsicWindowContext *, uint32_t)     = &msic_default_choose_present_mode;
 VkExtent2D         (*msic_choose_swap_extent)(MsicWindowContext *, uint32_t)      = &msic_default_choose_swap_extent;
 
-int *msic_swapchain_image_layers = NULL;
+uint32_t *msic_swapchain_image_layers = NULL;
 
 VkImageUsageFlags *msic_swapchain_image_usage_flags = NULL;
