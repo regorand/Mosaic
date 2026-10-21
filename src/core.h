@@ -36,6 +36,7 @@ bool msic_check_extension_support(void);
 bool msic_check_device_extension_support(VkPhysicalDevice device);
 
 uint32_t msic_write_extensions(uint32_t extension_count, const char** pp_extension_names);
+uint32_t msic_write_device_extensions(uint32_t extension_count, const char** pp_extension_names);
 
 uint32_t msic_write_layers(uint32_t layer_count, const char** pp_layer_names); 
 
@@ -46,17 +47,33 @@ void msic_populate_debug_messenger_create_info(VkDebugUtilsMessengerCreateInfoEX
 
 uint32_t msic_init_glfw(void); 
 
+void msic_populate_empty_window_context(MsicWindowContext *w_context);
 uint32_t msic_create_windows(MsicVulkanCore *core);
 uint32_t msic_create_surfaces(MsicVulkanCore *core);
+uint32_t msic_query_surface_support(MsicVulkanCore *core, MsicWindowContext *w_context);
+
+bool msic_check_swapchain_support(MsicVulkanCore *core);
+uint32_t msic_create_swapchain(MsicVulkanCore *core);
 
 uint32_t msic_create_physical_device(MsicVulkanCore *core);
 
 uint32_t msic_create_device(MsicVulkanCore *core);
 
-bool msic_default_phys_device_suitable(VkPhysicalDevice device, uint32_t *num_queue_indices, uint32_t **queue_indices, MsicVulkanCore *core);
+bool msic_default_phys_device_suitable(VkPhysicalDevice device, 
+                                        uint32_t *present_queue_index, 
+                                        uint32_t *graphics_queue_index,
+                                        bool     *present_graphics_match,
+                                        uint32_t **queue_indices, 
+                                        MsicVulkanCore *core); 
 
 uint32_t msic_default_choose_physical_device(uint32_t device_count, VkPhysicalDevice *devices, bool *suitable);
 
 void msic_list_phys_device_features(VkPhysicalDeviceFeatures features);
+
+VkSurfaceFormatKHR msic_default_choose_swapchain_format(MsicWindowContext *w_context, uint32_t index);
+VkPresentModeKHR msic_default_choose_present_mode(MsicWindowContext *w_context, uint32_t index);
+VkExtent2D msic_default_choose_swap_extent(MsicWindowContext *w_context, uint32_t index);
+
+uint32_t msic_choose_image_count(MsicWindowContext *w_context, uint32_t index);
 
 #endif // MSIC_CORE_H

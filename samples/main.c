@@ -2,24 +2,8 @@
 #include <vulkan/vulkan.h>
 
 
-void which_should_close(MsicVulkanCore *core, bool *still_open, bool *should_close) {
-  for (uint32_t i = 0; i < core->num_windows; i++) {
-    should_close[i] = false;
-    if (still_open[i] && glfwWindowShouldClose(core->windows[i])) {
-      should_close[i] = true;
-    }
-  }
-}
-
-bool all_should_close(MsicVulkanCore *core, bool *still_open) {
-  for (uint32_t i = 0; i < core->num_windows; i++) {
-    if (still_open[i] && !glfwWindowShouldClose(core->windows[i])) {
-      return false;
-    }
-  }
-
-  return true;
-}
+void which_should_close(MsicVulkanCore *core, bool *still_open, bool *should_close); 
+bool all_should_close(MsicVulkanCore *core, bool *still_open);
 
 int main(void) {
   MsicVulkanCore core;
@@ -30,17 +14,17 @@ int main(void) {
 
   msic_extension_count = 1;
   // char *xcb_extension = VK_KHR_XCB_SURFACE_EXTENSION_NAME;
-  char *xcb_extension = "VK_KHR_xcb_surface";
-  msic_extensions = &xcb_extension;
+  const char *xcb_extension = "VK_KHR_xcb_surface";
+  msic_extensions = (char **) &xcb_extension;
 
-  msic_num_queue_families = 1;
-  // msic_headless = true;
-  
   msic_num_windows = 1;
 
-  uint32_t flags_arr[msic_num_queue_families];
-  flags_arr[0] = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
-  msic_queue_families_flags = flags_arr;
+
+  // msic_num_queue_families = 0;
+  msic_num_extra_queue_families = 1;
+  uint32_t flags_arr[msic_num_extra_queue_families];
+  flags_arr[0] = VK_QUEUE_TRANSFER_BIT;
+  msic_extra_queue_families_flags = flags_arr;
  
   // Not supported on my current development machine, lets me test physical device unsuitability
   // msic_required_physical_device_features.textureCompressionASTC_LDR = VK_TRUE;
@@ -63,7 +47,7 @@ int main(void) {
 
     for (uint32_t i = 0; i < core.num_windows; i++) {
       if (should_close[i]) {
-        glfwDestroyWindow(core.windows[i]);
+        msic_destroy_window(&core, i);
         still_open[i] = false;
       }
     }
@@ -75,3 +59,23 @@ int main(void) {
   res = msic_destroy_vulkan_core(&core);
   return (int) res;
 }
+
+void which_should_close(MsicVulkanCore *core, bool *still_open, bool *should_close) {
+  for (uint32_t i = 0; i < core->num_windows; i++) {
+    should_close[i] = false;
+    if (still_open[i] && glfwWindowShouldClose(core->windows[i].window)) {
+      should_close[i] = true;
+    }
+  }
+}
+
+bool all_should_close(MsicVulkanCore *core, bool *still_open) {
+  for (uint32_t i = 0; i < core->num_windows; i++) {
+    if (still_open[i] && !glfwWindowShouldClose(core->windows[i].window)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+

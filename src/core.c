@@ -1,3 +1,4 @@
+#include "control_params.h"
 #include "core.h"
 #include "mosaic.h"
 
@@ -7,6 +8,8 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_enum_string_helper.h>
 #include <GLFW/glfw3.h>
+
+#define clamp(val, min, max) ((val) < (min) ? (min) : ((val) > (max) ? (max) : (val)))
 
 void msic_default_log_callback(const char *file, uint32_t line, const char *message, uint32_t severity) {
   if (severity >= msic_log_level) {
@@ -155,6 +158,13 @@ bool msic_check_device_extension_support(VkPhysicalDevice device) {
     return false;
   }
 
+  if (!msic_headless) {
+    if (!msic_check_extension(extension_props, extension_count, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+      MSIC_ERR("VK_KHR_Swapchain extension not supported!");
+      return false;
+    } 
+  } 
+
   for (uint32_t i = 0; i < msic_device_extension_count; i++) {
     char *extension = msic_device_extensions[i];
     if (!msic_check_extension(extension_props, extension_count, extension))  {
@@ -165,6 +175,7 @@ bool msic_check_device_extension_support(VkPhysicalDevice device) {
 
   return true;
 }
+
 uint32_t msic_write_extensions(uint32_t extension_count, const char** pp_extension_names) {
   memcpy(pp_extension_names, msic_extensions, msic_extension_count * sizeof(char *));
 
@@ -189,7 +200,7 @@ uint32_t msic_write_extensions(uint32_t extension_count, const char** pp_extensi
   if (!msic_headless) {
     pp_extension_names[msic_extension_count + current_extra_offset] = VK_KHR_SURFACE_EXTENSION_NAME; 
     current_extra_offset++;
-   }
+  }
 
 
   return 0;
@@ -210,6 +221,27 @@ uint32_t msic_write_layers(uint32_t layer_count, const char** pp_layer_names) {
   return 0;
 }
 
+uint32_t msic_write_device_extensions(uint32_t extension_count, const char** pp_extension_names) {
+  memcpy(pp_extension_names, msic_extensions, msic_device_extension_count * sizeof(char *));
+
+  uint32_t extra_extensions = 0;
+  if (!msic_headless)         extra_extensions++;
+
+  if (extension_count < msic_device_extension_count + extra_extensions) {
+    // TODO could give better error message -> which extensions can be added automatically, which are, etc.
+    MSIC_ERR("extension_count not large enough to account for msic_device_extension_count and automatically added extensions");
+    return 1;
+  }
+
+  uint32_t current_extra_offset = 0;
+
+  if (!msic_headless) {
+    pp_extension_names[msic_device_extension_count + current_extra_offset] = VK_KHR_SWAPCHAIN_EXTENSION_NAME; 
+    current_extra_offset++;
+  }
+
+  return 0;
+}
 
 uint32_t msic_create_instance(MsicVulkanCore *core) {
   MSIC_INFO("Creating Vulkan Instance");
@@ -297,6 +329,14 @@ uint32_t msic_init_glfw() {
   return 0;
 }
 
+void msic_populate_empty_window_context(MsicWindowContext *w_context) {
+  w_context->open          = false;
+  w_context->surface       = NULL;
+  w_context->window        = NULL;
+  w_context->formats       = NULL;
+  w_context->present_modes = NULL;
+}
+
 uint32_t msic_create_windows(MsicVulkanCore *core) {
   int glfw_supported = glfwVulkanSupported();
   if (glfw_supported != GLFW_TRUE) {
@@ -304,9 +344,10 @@ uint32_t msic_create_windows(MsicVulkanCore *core) {
     return 1;
   }
 
-  core->windows = malloc(msic_num_windows * sizeof(GLFWwindow *));
+  core->windows = malloc(msic_num_windows * sizeof(MsicWindowContext));
 
   for (uint32_t i = 0; i < msic_num_windows; i++) {
+    msic_populate_empty_window_context(&core->windows[i]);
     glfwDefaultWindowHints();
 
     // No OpenGL context
@@ -326,24 +367,293 @@ uint32_t msic_create_windows(MsicVulkanCore *core) {
       MSIC_ERR("Encountered fatal error creating glfw window, aborting");
       return 1;
     }
-    core->windows[i] = w;
+
+    core->windows[i].window = w;
+    core->windows[i].open   = true;
   }
 
   core->num_windows = msic_num_windows;
-  MSIC_VERBOSE("Created %d windows", core->num_windows);
+  MSIC_VERBOSE("Created %d window(s)", core->num_windows);
+
+  return 0;
+}
+
+uint32_t msic_query_surface_support(MsicVulkanCore *core, MsicWindowContext *w_context) {
+  MSIC_VK_CALL(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(core->physical_device, w_context->surface, &w_context->surface_capabilities));
+
+  // Get number supported supported formats
+  MSIC_VK_CALL(vkGetPhysicalDeviceSurfaceFormatsKHR(
+        core->physical_device, 
+        w_context->surface,
+        &w_context->num_supported_formats,
+        NULL));
+
+
+  if (w_context->num_supported_formats != 0) {
+    w_context->formats = malloc(w_context->num_supported_formats * sizeof(VkSurfaceFormatKHR *));
+    
+    // get supported surface formats
+    MSIC_VK_CALL(vkGetPhysicalDeviceSurfaceFormatsKHR(
+          core->physical_device,
+          w_context->surface,
+          &w_context->num_supported_formats,
+          w_context->formats));
+  }
+
+
+  // Get number of supported present modes
+  MSIC_VK_CALL(vkGetPhysicalDeviceSurfacePresentModesKHR(
+        core->physical_device, 
+        w_context->surface, 
+        &w_context->num_present_modes, 
+        NULL));
+
+  if (w_context->num_present_modes != 0) {
+    w_context->present_modes = malloc(w_context->num_present_modes * sizeof(VkPresentModeKHR));
+
+    // Get supported present modes
+    MSIC_VK_CALL(vkGetPhysicalDeviceSurfacePresentModesKHR(
+          core->physical_device,
+          w_context->surface, 
+          &w_context->num_present_modes, 
+          w_context->present_modes));
+  }
 
   return 0;
 }
 
 uint32_t msic_create_surfaces(MsicVulkanCore *core) {
-  core->surfaces = malloc(msic_num_windows * sizeof(VkSurfaceKHR));
-
   for (uint32_t i = 0; i < msic_num_windows; i++) {
-    MSIC_VK_CALL(glfwCreateWindowSurface(core->instance, core->windows[i], NULL, &core->surfaces[i])); 
+    MsicWindowContext *w_context = &core->windows[i];
+    MSIC_VK_CALL(glfwCreateWindowSurface(core->instance, w_context->window, NULL, &w_context->surface)); 
+
   }
 
-  MSIC_VERBOSE("Created %d surfaces", core->num_windows);
+  MSIC_VERBOSE("Created %d surface(s)", core->num_windows);
   return 0;
+}
+
+bool msic_check_swapchain_support(MsicVulkanCore *core) {
+  for (uint32_t i = 0; i < core->num_windows; i++) {
+    MsicWindowContext *w_context = &core->windows[i];
+
+    MSIC_CALL(msic_query_surface_support(core, w_context));
+
+    if (w_context->num_supported_formats == 0) {
+      MSIC_ERR("Surface %d supports no surface formats", i);
+      return true;
+    }
+
+    if (msic_swapchain_formats != NULL && msic_swapchain_formats[i].format != VK_FORMAT_UNDEFINED) {
+      bool supported = false;
+
+      for (uint32_t j = 0; j < w_context->num_supported_formats; j++) {
+        if (msic_swapchain_formats[i].format == w_context->formats[j].format &&
+            msic_swapchain_formats[i].colorSpace == w_context->formats[j].colorSpace) {
+          supported = true;
+          break;
+        }  
+      }
+
+      if (!supported) {
+        MSIC_ERR("Requested surface format { %s, %s } for swapchain %d not supported", 
+            string_VkFormat(        msic_swapchain_formats[i].format), 
+            string_VkColorSpaceKHR( msic_swapchain_formats[i].colorSpace), 
+            i); 
+        return false;
+      }
+    }
+
+
+    if (w_context->num_present_modes == 0) {
+      MSIC_ERR("Surface %d supports no present modes", i);
+      return true;
+    }
+
+    if (msic_present_modes != NULL) {
+      bool supported = false;
+
+      for (uint32_t j = 0; j < w_context->num_present_modes; j++) {
+        if (msic_present_modes[i] == w_context->present_modes[j]) {
+          supported = true;
+          break;
+        }  
+      }
+
+      if (!supported) {
+        MSIC_ERR("Requested present mode %s for swapchain %d not supported", string_VkPresentModeKHR(msic_present_modes[i]), i); 
+        return false;
+      }
+    }
+
+    /*
+    MSIC_VERBOSE("support for surface %d", i);
+
+    MSIC_VERBOSE("\tVkSurfaceCapabilitiesKHR:");
+
+    VkSurfaceCapabilitiesKHR *caps = &w_context->surface_capabilities;
+
+    MSIC_VERBOSE("\t\tminImageCount: %u", caps->minImageCount);
+    MSIC_VERBOSE("\t\tmaxImageCount: %u", caps->maxImageCount);
+
+    MSIC_VERBOSE("\t\tcurrentExtent: %ux%u",
+                 caps->currentExtent.width,
+                 caps->currentExtent.height);
+    MSIC_VERBOSE("\t\tminImageExtent: %ux%u",
+                 caps->minImageExtent.width,
+                 caps->minImageExtent.height);
+    MSIC_VERBOSE("\t\tmaxImageExtent: %ux%u",
+                 caps->maxImageExtent.width,
+                 caps->maxImageExtent.height);
+
+    MSIC_VERBOSE("\t\tmaxImageArrayLayers: %u", caps->maxImageArrayLayers);
+
+    MSIC_VERBOSE("\t\tsupportedTransforms: 0x%08x", caps->supportedTransforms);
+    MSIC_VERBOSE("\t\tcurrentTransform: 0x%08x", caps->currentTransform);
+    MSIC_VERBOSE("\t\tsupportedCompositeAlpha: 0x%08x", caps->supportedCompositeAlpha);
+    MSIC_VERBOSE("\t\tsupportedUsageFlags: 0x%08x", caps->supportedUsageFlags);
+
+    MSIC_VERBOSE("\tFormats");
+    for (uint32_t j = 0; j < w_context->num_supported_formats; j++) {
+      MSIC_VERBOSE("\t\tsurface: %s\t\tcolorspace: %s", 
+          string_VkFormat(w_context->formats[j].format), 
+          string_VkColorSpaceKHR(w_context->formats[j].colorSpace));
+    } 
+
+    MSIC_VERBOSE("\tPresent Modes");
+    for (uint32_t j = 0; j < w_context->num_present_modes; j++) {
+      MSIC_VERBOSE("\t\tpresent_mode: %s", string_VkPresentModeKHR(w_context->present_modes[j])); 
+    } 
+    */
+  } 
+
+  return true;
+}
+
+uint32_t msic_create_swapchain(MsicVulkanCore *core) {
+//   for (uint32_t i = 0; i < core->num_windows; i++) {
+//     MsicWindowContext *w_context = &core->windows[i];
+// 
+//     VkSurfaceFormatKHR format     = msic_choose_swapchain_format(w_context, i);
+//     VkPresentModeKHR present_mode = msic_choose_present_mode(w_context, i);
+//     VkExtent2D extent             = msic_choose_swap_extent(w_context, i);
+// 
+//     uint32_t image_count          = msic_choose_image_count(w_context, i); 
+// 
+//     VkSwapchainCreateInfoKHR create_info;
+// 
+//     create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+//     create_info.pNext = NULL;
+//     create_info.flags = NULL;
+//     create_info.surface = w_context->surface;
+//     create_info.minImageCount = image_count;
+//     create_info.imageFormat = format.format;
+//     create_info.imageColorSpace = format.colorSpace;
+//     create_info.imageExtent = extent;
+// 
+//     if (msic_swapchain_image_layers != NULL) {
+//       create_info.imageArrayLayers = msic_swapchain_image_layers[i];
+//     } else {
+//       create_info.imageArrayLayers = 1;
+//     }
+// 
+//     if (msic_swapchain_image_usage_flags != NULL) {
+//       create_info.imageUsage = msic_swapchain_image_usage_flags[i];
+//     } else {
+//       create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+//     }
+// 
+//     VkQueue present_queue = core->queues[core->present_queue_index]; 
+//     VkQueue graphics_queue = core->queues[core->graphics_queue_index];
+// 
+//     if (present_queue == graphics_queue) {
+//       create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+//       create_info.queueFamilyIndexCount = 0;
+//       create_info.pQueueFamilyIndices = NULL;
+//     } else {
+//       uint32_t queue_indices = { present_queue };
+//       // TODO rewrite queue system -> see at msic_default_phys_device_suitable 
+//     }
+// 
+//   }
+// 
+  return 0;
+}
+
+VkSurfaceFormatKHR msic_default_choose_swapchain_format(MsicWindowContext *w_context, uint32_t index) {
+  // If user specifed a format choose that one
+  // If surface format field VkFormat field is set to VK_FORMAT_UNDEFINED, choose another
+  if (msic_swapchain_formats != NULL && msic_swapchain_formats[index].format != VK_FORMAT_UNDEFINED) {
+    return msic_swapchain_formats[index];
+  }
+
+  // Check for some probably reasonable default format
+  for (uint32_t i = 0; i < w_context->num_supported_formats; i++) {
+    VkSurfaceFormatKHR format = w_context->formats[i];
+
+    if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+      return format;
+    }
+  }
+
+  // As last resort use first supported format 
+  // Guaranteed we have this because w_context->num_supported_formats > 0 is checked earlier
+  return w_context->formats[0];
+}
+
+VkPresentModeKHR msic_default_choose_present_mode(MsicWindowContext *w_context, uint32_t index) {
+  // If user specified a present mode choose that one
+  if (msic_present_modes != NULL) {
+    return msic_present_modes[index];
+  } 
+
+  // Check if Mailbox present mode is present as preferred default
+  for (uint32_t i = 0; i < w_context->num_present_modes; i++) {
+    if (w_context->present_modes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
+      return w_context->present_modes[i];
+    }
+  }
+
+  // Otherwise, this should always be supported
+  return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+// swap extent choice function adapted to C from https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Swap_chain
+VkExtent2D msic_default_choose_swap_extent(MsicWindowContext *w_context, uint32_t index) {
+  UNUSED(index);
+  VkSurfaceCapabilitiesKHR caps = w_context->surface_capabilities;
+
+  if (caps.currentExtent.width != UINT32_MAX) {
+    return caps.currentExtent;
+  } else {
+    int width, height; 
+
+    glfwGetFramebufferSize(w_context->window, &width, &height);
+
+    VkExtent2D actualExtent = {
+        (uint32_t)(width),
+        (uint32_t)(height)
+    };
+
+    actualExtent.width  = clamp(actualExtent.width,  caps.minImageExtent.width,  caps.maxImageExtent.width);
+    actualExtent.height = clamp(actualExtent.height, caps.minImageExtent.height, caps.maxImageExtent.height);
+
+    return actualExtent;
+  }
+}
+
+uint32_t msic_choose_image_count(MsicWindowContext *w_context, uint32_t index){ 
+  UNUSED(index);
+  VkSurfaceCapabilitiesKHR caps = w_context->surface_capabilities;
+
+  // Target three images to support triple buffering 
+  uint32_t images = 3;
+
+  // clamp image count, consider maxImageCount exception for 0
+  if (                           caps.minImageCount > images) images = caps.minImageCount;
+  if (caps.maxImageCount != 0 && caps.maxImageCount < images) images = caps.maxImageCount;
+
+  return images;
 }
 
 uint32_t msic_create_physical_device(MsicVulkanCore *core) {
@@ -361,14 +671,25 @@ uint32_t msic_create_physical_device(MsicVulkanCore *core) {
   VkPhysicalDevice devices[device_count];
   MSIC_VK_CALL(vkEnumeratePhysicalDevices(core->instance, &device_count, devices));
 
-  uint32_t  arr_num_queue_indices[device_count];
+  uint32_t  arr_present_indices[device_count];
+  uint32_t  arr_graphics_indices[device_count];
+  bool      arr_present_graphics_match[device_count];
   uint32_t *arr_queue_indices[device_count];
   bool      suitable[device_count];
+
+  for (uint32_t i = 0; i < device_count; i++) {
+    arr_queue_indices[i] = malloc(msic_num_extra_queue_families * sizeof(uint32_t));
+  } 
 
   uint32_t num_suitable = 0;
 
   for (uint32_t i = 0; i < device_count; i++) {
-    suitable[i] = (*msic_phys_device_suitable)(devices[i], &(arr_num_queue_indices[i]), &(arr_queue_indices[i]), core);
+    suitable[i] = (*msic_phys_device_suitable)(devices[i], 
+                                               &(arr_present_indices[i]), 
+                                               &(arr_graphics_indices[i]), 
+                                               &(arr_present_graphics_match[i]), 
+                                               &(arr_queue_indices[i]), 
+                                               core);
 
     if (suitable[i]) num_suitable++;
   }
@@ -394,14 +715,16 @@ uint32_t msic_create_physical_device(MsicVulkanCore *core) {
   MSIC_INFO("Chose device %s with index %d", props.deviceName, chosen_device_index);
   
   core->physical_device =           devices[chosen_device_index];
-  core->num_device_queue_indices =  arr_num_queue_indices[chosen_device_index];
+  core->num_device_queue_indices =  msic_num_extra_queue_families;
   core->device_queue_indices =      arr_queue_indices[chosen_device_index];
 
   return 0;
 }
 
 bool msic_default_phys_device_suitable(VkPhysicalDevice device, 
-                                        uint32_t *num_queue_indices, 
+                                        uint32_t *present_queue_index, 
+                                        uint32_t *graphics_queue_index,
+                                        bool     *present_graphics_match,
                                         uint32_t **queue_indices, 
                                         MsicVulkanCore *core) {
 
@@ -451,86 +774,241 @@ bool msic_default_phys_device_suitable(VkPhysicalDevice device,
   // --------------
   // Queue families 
   // --------------
+  
+  // TODO: rewrite queue handling:
+  // Idea:
+  // - Bool flag: msic_headless tells if we need present queue
+  // - Bool flag: extra one for msic_require_graphics
+  // - If both true, specially test if a queue supports both
+  // - Then take additional flags: Test if either of present or graphics queue supports these aswell
+  // - If yes, point there, if no, point elsewhere.
+  //
+  
+ 
   uint32_t queue_families_count = 0;
   vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_families_count, NULL);
-   
-  if (!msic_headless) {
-    for (uint32_t i = 0; i < queue_families_count; i++) {
-      bool supports_all = true;
+
+  VkQueueFamilyProperties queue_family_props[queue_families_count];
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_families_count, queue_family_props);
+
+  bool present_support[queue_families_count]; 
+  bool graphics_support[queue_families_count];
+
+  bool extra_queues_support[msic_num_extra_queue_families][queue_families_count];
+  
+  bool any_present_support = false;
+  bool any_graphics_support = false;
+
+  bool extra_any_support[msic_num_extra_queue_families];
+
+  for (uint32_t i = 0; i < msic_num_extra_queue_families; i++) {
+    extra_any_support[i] = false;
+  }
+
+  for (uint32_t i = 0; i < queue_families_count; i++) {
+    // Check for presentation support
+    if (msic_present) {
+      bool supported = true;
 
       for (uint32_t j = 0; j < core->num_windows; j++) {
-        VkBool32 present_support = false;
+        MsicWindowContext *w_context = &core->windows[j];
+        VkBool32 present_supported = false;
 
-        MSIC_VK_CALL(vkGetPhysicalDeviceSurfaceSupportKHR(device, i, core->surfaces[j], &present_support));
+        MSIC_VK_CALL(vkGetPhysicalDeviceSurfaceSupportKHR(device, i, w_context->surface, &present_supported));
 
-        supports_all &= present_support; 
-      } 
+        any_present_support |= present_supported;
+        supported &= present_supported;
+      }
 
-      if (supports_all) {
-        core->present_queue_index = i;
+      present_support[i] = supported;
+    }
+
+
+    // Check for graphics support
+    if (msic_graphics) {
+      graphics_support[i] = (queue_family_props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT);
+      any_graphics_support |= graphics_support[i];
+    }
+
+    // Check other requested queues
+    for (uint32_t j = 0; j < msic_num_extra_queue_families; j++) {
+      extra_queues_support[j][i] = (queue_family_props[i].queueFlags & msic_extra_queue_families_flags[j]) == msic_extra_queue_families_flags[j];
+      extra_any_support[j] = extra_queues_support[j][i];
+    }
+  }
+  
+  if (msic_present && !any_present_support) {
+    MSIC_VERBOSE("No present support on device %s", props.deviceName);
+    return false;
+  } 
+
+  if (msic_graphics && !any_graphics_support) {
+    MSIC_VERBOSE("No graphics support on device %s", props.deviceName); 
+    return false;
+  }
+
+  for (uint32_t i = 0; i < msic_num_extra_queue_families; i++) {
+    if (!extra_any_support[i]) {
+      MSIC_VERBOSE("No support for requested queue flags at index %d", i);
+      return false;
+    }
+  }
+
+  // Check if we have a queue that supports both presentation and graphics operations.
+  // If so, choose that one. If multiple, use lower index
+
+
+  uint32_t first_present_support = 0;
+  uint32_t first_graphics_support = 0;
+
+  if (msic_present && msic_graphics) {
+    for (uint32_t i = 0; i < queue_families_count; i++) {
+      if (present_support[i]) first_present_support = i;
+      if (graphics_support[i]) first_graphics_support = i;
+
+      if (present_support[i] && graphics_support[i]) {
+        *present_queue_index = i;
+        *graphics_queue_index = i;
+        *present_graphics_match = true;
         break;
+      } 
+    } 
+  }
+
+  if (!present_graphics_match) {
+    // Don't care to check msic_present and msic_graphics here, if those are false the values are 0 and supposed to be invalid anyways
+    *present_queue_index = first_present_support;
+    *graphics_queue_index = first_graphics_support; 
+  }
+
+  for (uint32_t i = 0; i < msic_num_extra_queue_families; i++) {
+    int first_test_index = -1;
+    if (msic_present)       first_test_index = (int) *present_queue_index;
+    else if (msic_graphics) first_test_index = (int) *graphics_queue_index;
+
+    // Choose a queue we use for presentation or graphics if possible
+    if (first_test_index != -1) {
+      if (extra_queues_support[i][first_test_index]) {
+        (*queue_indices)[i] = (uint32_t) first_test_index;  
+        continue;
+      }
+    }
+
+    for (uint32_t j = 0; j < queue_families_count; j++) {
+      // Bit confusing, in this double loop the extra requested queues are outside, the available queues inside loop
+      // This is reverse from the loop above where we check support, so the indices i and j are the other way around here
+      if (extra_queues_support[i][j]) {
+        (*queue_indices)[i] = j;  
+        continue;
       }
     }
   }
 
+// TODO Hopefully can delete all this once queues work well after refactor
+//   // -------------
+//   if (!msic_headless) {
+//     for (uint32_t i = 0; i < queue_families_count; i++) {
+//       bool supports_all = true;
+// 
+//       for (uint32_t j = 0; j < core->num_windows; j++) {
+//         MsicWindowContext *w_context = &core->windows[j];
+//         VkBool32 present_support = false;
+// 
+//         MSIC_VK_CALL(vkGetPhysicalDeviceSurfaceSupportKHR(device, i, w_context->surface, &present_support));
+// 
+//         supports_all &= present_support; 
+//       } 
+// 
+//       if (supports_all) {
+//         core->present_queue_index = i;
+//         break;
+//       }
+//     }
+// 
+//     MSIC_ERR("Requested non-headless application but no present queue was found");
+//     return false;
+//   }
+// 
+// 
+//   bool require_free_on_fail = false;
+//   if (queue_families_count == 0) {
+//     MSIC_INFO("Device %s has no queue families", props.deviceName);
+//     suitable = false;
+//   } else {
+//     VkQueueFamilyProperties queue_families[queue_families_count];
+//     vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_families_count, queue_families);
+// 
+//     if (!msic_headless) {
+//       for (uint32_t i = 0; i < queue_families_count; i++) {
+//         if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+//           core->graphics_queue_index = i;
+//           break;
+//         }
+//       }
+// 
+//       MSIC_ERR("Requested non-headless application but no graphics queue was found");
+//       return false;
+//     }
+// 
+//     if (msic_num_queue_families == 0) {
+//       *num_queue_indices = 1;
+// 
+//       *queue_indices = malloc(sizeof(uint32_t));
+//       require_free_on_fail = true;
+//       
+//       *queue_indices[0] = 0;
+//     } else {
+//       *num_queue_indices = msic_num_queue_families;
+//       *queue_indices = malloc(sizeof(uint32_t) * msic_num_queue_families);
+//       require_free_on_fail = true;
+// 
+//       // For all requested family flags...
+//       for (uint32_t i = 0; i < msic_num_queue_families; i++) {
+//         bool found_queue_family = false;
+// 
+//         // ... loop over all available queue families...
+//         for (uint32_t j = 0; j < queue_families_count; j++) {
+// 
+//           // ... and check if the required flags are supported.
+//           if ((msic_queue_families_flags[i] & queue_families[j].queueFlags) == msic_queue_families_flags[i]) {
+//             (*queue_indices)[i] = j;   
+// 
+//             found_queue_family = true;
+//             // Don't look for other queue families, which could overwrite this
+//             break;
+//           }
+// 
+//         }
+// 
+//         if (!found_queue_family) {
+//           MSIC_VERBOSE("\tNo queue family for flag %d", msic_queue_families_flags[i]);
+//           suitable = false;
+//         }
+//       }
+//     }
+//   }
 
-  bool require_free_on_fail = false;
-  if (queue_families_count == 0) {
-    MSIC_INFO("Device %s has no queue families", props.deviceName);
-    suitable = false;
-  } else {
-    VkQueueFamilyProperties queue_families[queue_families_count];
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_families_count, queue_families);
-
-    if (msic_num_queue_families == 0) {
-      *num_queue_indices = 1;
-
-      *queue_indices = malloc(sizeof(uint32_t));
-      require_free_on_fail = true;
-      
-      *queue_indices[0] = 0;
-    } else {
-      *num_queue_indices = msic_num_queue_families;
-      *queue_indices = malloc(sizeof(uint32_t) * msic_num_queue_families);
-      require_free_on_fail = true;
-
-      
-
-      // For all requested family flags...
-      for (uint32_t i = 0; i < msic_num_queue_families; i++) {
-        bool found_queue_family = false;
-
-        // ... loop over all available queue families...
-        for (uint32_t j = 0; j < queue_families_count; j++) {
-
-          // ... and check if the required flags are supported.
-          if ((msic_queue_families_flags[i] & queue_families[j].queueFlags) == msic_queue_families_flags[i]) {
-            (*queue_indices)[i] = j;   
-
-            found_queue_family = true;
-            // Don't look for other queue families, which could overwrite this
-            break;
-          }
-
-        }
-
-        if (!found_queue_family) {
-          MSIC_VERBOSE("\tNo queue family for flag %d", msic_queue_families_flags[i]);
-          suitable = false;
-        }
-      }
-    }
-  }
-
+  // --------------
+  // Device Extension support 
+  // --------------
   MSIC_VERBOSE("\tChecking device extension support");
   if (!msic_check_device_extension_support(device)) {
     MSIC_VERBOSE("\tRequested device extensions not supported"); 
     suitable = false;
   }
 
+
+  // --------------
+  // Swapchain requirements 
+  // --------------
+  if (!msic_present) {
+    // TODO Implement
+  } 
+
+
+
   if (!suitable) {
     MSIC_INFO("Device %s unsuitable", props.deviceName);
-    if (require_free_on_fail) free(*queue_indices);
     return false;
   }
 
@@ -611,7 +1089,6 @@ uint32_t msic_create_device(MsicVulkanCore *core) {
   create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
   create_info.pNext = NULL;
   create_info.flags = 0;
-
   
   // The problem here is that the user can request different queues with different flags
   // However, if multiple of these point to the same queue, I may not request multiple of these
@@ -624,14 +1101,27 @@ uint32_t msic_create_device(MsicVulkanCore *core) {
   // A better option might be to increase the queueCount for duplicated queues
 
   uint32_t num_queues = core->num_device_queue_indices;
-
-  if (!msic_headless) num_queues++;
-
-  uint32_t queue_indices[num_queues];
-  memcpy(queue_indices, core->device_queue_indices, core->num_device_queue_indices * sizeof(uint32_t));
-
-  if (!msic_headless) queue_indices[core->num_device_queue_indices] = core->present_queue_index;
   
+  uint32_t prefix_queues = 0;
+  if (msic_present) {
+    prefix_queues++;
+  }
+  if (msic_graphics) {
+    prefix_queues++;
+  }
+
+  uint32_t queue_indices[prefix_queues + num_queues];
+  if (msic_present) {
+    queue_indices[0] = core->present_queue_index;
+  }
+
+  if (msic_graphics) {
+    queue_indices[msic_present ? 1 : 0] = core->graphics_queue_index;
+  }
+
+  memcpy(queue_indices + prefix_queues, core->device_queue_indices, core->num_device_queue_indices * sizeof(uint32_t));
+  num_queues += prefix_queues;
+
   uint32_t distinct_queues_first_indices[num_queues];
   uint32_t queue_indirection_index      [num_queues];
   uint32_t distinct_queues_count = 0;
@@ -683,10 +1173,24 @@ uint32_t msic_create_device(MsicVulkanCore *core) {
 
   create_info.enabledExtensionCount = msic_device_extension_count;
   
-  if (msic_device_extension_count > 0 && msic_device_extensions) {
-    create_info.ppEnabledExtensionNames = (const char * const *) *msic_device_extensions;
+  if (!msic_headless) create_info.enabledExtensionCount++;
+
+  const char *extension_names[create_info.enabledExtensionCount];
+
+  if (create_info.enabledExtensionCount > 0) {
+    if (msic_write_device_extensions(create_info.enabledExtensionCount, extension_names)) {
+      MSIC_ERR("Failed to write vulkan device extension names");
+      return 1;
+    }
+    
+    create_info.ppEnabledExtensionNames = (const char * const *) extension_names;
+
+    for (uint32_t i = 0; i < create_info.enabledExtensionCount; i++) {
+      MSIC_VERBOSE("\tEnabling device extension: %s", extension_names[i]);
+    }
+
   } else {
-    create_info.ppEnabledExtensionNames = NULL; 
+    create_info.ppEnabledExtensionNames = NULL;
   }
 
   create_info.pEnabledFeatures = &msic_required_physical_device_features;
@@ -698,15 +1202,17 @@ uint32_t msic_create_device(MsicVulkanCore *core) {
   for (uint32_t i = 0; i < distinct_queues_count; i++) {
     vkGetDeviceQueue(core->device, queue_indices[distinct_queue_indices[i]], 0, &(distinct_queues[i]));
   }
-  
-  core->queues = malloc(sizeof(VkQueue) * num_queues);
-  for (uint32_t i = 0; i < num_queues; i++) {
-    core->queues[i] = distinct_queues[queue_indirection_index[i]];
-  }
+ 
+  if (msic_num_extra_queue_families > 0) {
+    core->queues = malloc(sizeof(VkQueue) * msic_num_extra_queue_families);
 
-  if (!msic_headless) {
-    core->present_queue_index = num_queues;
-  }
+    for (uint32_t i = prefix_queues; i < num_queues; i++) {
+      core->queues[i] = distinct_queues[queue_indirection_index[i]];
+    }
+  } 
+
+  if (msic_present)  core->present_queue   = distinct_queues[queue_indirection_index[0]];
+  if (msic_graphics) core->graphics_queue = distinct_queues[queue_indirection_index[msic_present ? 1 : 0]];
 
   return 0;
 }

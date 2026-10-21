@@ -1,4 +1,5 @@
-#include "mosaic.h"
+// #include "mosaic.h"
+#include "control_params.h"
 #include "core.h"
 
 FILE **msic_log_output_stream = &stdout; 
@@ -29,19 +30,22 @@ int32_t msic_physical_device_type = -1;
 
 VkPhysicalDeviceFeatures msic_required_physical_device_features = {0};
 
-bool (*msic_phys_device_suitable)(VkPhysicalDevice, uint32_t *, uint32_t **, MsicVulkanCore *) = &msic_default_phys_device_suitable;
+bool (*msic_phys_device_suitable)(VkPhysicalDevice, uint32_t *, uint32_t *, bool *, uint32_t **, MsicVulkanCore *) = &msic_default_phys_device_suitable;
 
 uint32_t (*msic_choose_physical_device)(uint32_t, VkPhysicalDevice *, bool *) = &msic_default_choose_physical_device; 
 
-uint32_t msic_num_queue_families = 0;
+uint32_t msic_num_extra_queue_families = 0;
 
-uint32_t *msic_queue_families_flags = NULL;
+uint32_t *msic_extra_queue_families_flags = NULL;
 
 uint32_t msic_device_extension_count = 0;
 
 char **msic_device_extensions = NULL;
 
 bool msic_headless = false;
+
+bool msic_present =  true;
+bool msic_graphics = true;
 
 uint32_t msic_num_windows = 1;
 
@@ -50,3 +54,15 @@ uint32_t *msic_window_hint_counts = NULL;
 int32_t **msic_window_hints = NULL;
 
 int32_t **msic_window_hint_values = NULL;
+
+VkSurfaceFormatKHR *msic_swapchain_formats = NULL;
+
+VkPresentModeKHR *msic_present_modes = NULL;
+
+VkSurfaceFormatKHR (*msic_choose_swapchain_format)(MsicWindowContext *, uint32_t) = &msic_default_choose_swapchain_format;
+VkPresentModeKHR   (*msic_choose_present_mode)(MsicWindowContext *, uint32_t)     = &msic_default_choose_present_mode;
+VkExtent2D         (*msic_choose_swap_extent)(MsicWindowContext *, uint32_t)      = &msic_default_choose_swap_extent;
+
+int *msic_swapchain_image_layers = NULL;
+
+VkImageUsageFlags *msic_swapchain_image_usage_flags = NULL;

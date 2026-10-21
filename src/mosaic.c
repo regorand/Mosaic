@@ -31,7 +31,6 @@ uint32_t msic_build_vulkan_core(MsicVulkanCore *core) {
   core->debug_messenger           = VK_NULL_HANDLE;
   core->physical_device           = VK_NULL_HANDLE;
   core->windows                   = NULL;
-  core->surfaces                  = NULL;
   core->num_windows               = 0;
   core->num_device_queue_indices  = 0;
   core->device_queue_indices      = NULL;
@@ -81,6 +80,17 @@ uint32_t msic_build_vulkan_core(MsicVulkanCore *core) {
   MSIC_INFO("Creating device");
   MSIC_CALL(msic_create_device(core));
 
+  if (!msic_headless) {
+    MSIC_INFO("Initializing Swapchain");
+
+    if (!msic_check_swapchain_support(core)) {
+      MSIC_ERR("Requested Swapchain features not supported");
+      return 1;
+    }
+
+    MSIC_CALL(msic_create_swapchain(core));
+  }
+
   MSIC_INFO("Finished loading vulkan core");
   return 0;
 }
@@ -92,20 +102,20 @@ uint32_t msic_destroy_vulkan_core(MsicVulkanCore *core) {
     free(core->queues);
   }
 
-  if (core->surfaces != NULL) {
-    MSIC_VERBOSE("Destroying surfaces and freeing handle array");
-    for (uint32_t i = 0; i < core->num_windows; i++) {
-      vkDestroySurfaceKHR(core->instance, core->surfaces[i], NULL);
-    }
-    free(core->surfaces);
-  }
-
   if (!msic_headless) {
     MSIC_VERBOSE("Terminating glfw");
     glfwTerminate();
   }
 
   if (core->windows != NULL) {
+    MSIC_VERBOSE("Destroying window contexts");
+
+    for (uint32_t i = 0; i < core->num_windows; i++) {
+      if (core->windows[i].open) {
+        msic_destroy_window(core, i);
+      }
+    }
+
     MSIC_VERBOSE("Freeing window pointer array");
     free(core->windows);
   }
@@ -139,3 +149,30 @@ uint32_t msic_destroy_vulkan_core(MsicVulkanCore *core) {
 
   return 0;
 }
+
+
+void msic_destroy_window(MsicVulkanCore *core, uint32_t window_index) {
+  MSIC_VERBOSE("Destroying window with window_index %d", window_index);
+  MsicWindowContext *w_context = &core->windows[window_index];
+
+  w_context->open = false;
+
+  if (w_context->formats != NULL) {
+    free(w_context->formats);
+  }
+  
+  if (w_context->present_modes != NULL) {
+    free(w_context->present_modes);
+  }
+
+  if (w_context->surface != NULL) {
+    vkDestroySurfaceKHR(core->instance, w_context->surface, NULL);
+  }
+  
+  if (w_context->window != NULL) {
+    glfwDestroyWindow(w_context->window);
+  }
+
+  w_context->open = false;
+}
+
