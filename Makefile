@@ -21,6 +21,7 @@ HDRFILES = $(PRIV_HDR_FILES) $(PUBL_HDR_FILES)
 
 OBJFILES = $(patsubst src/%,bin/objects/%,$(patsubst %.c,%.o,$(SRCFILES)))
 DEPFILES = $(patsubst %.o,%.d,$(OBJFILES))
+OBJDIRS := $(sort $(dir $(OBJFILES)))
 
 SPLFILES = $(shell find $(SPLDIRS) -type f -name "*.c")
 SPLOBJFILES = $(patsubst samples/%,bin/objects/%,$(patsubst %.c,%.o,$(SPLFILES)))
@@ -36,7 +37,7 @@ WARNINGS := -Wall -Wextra -pedantic -Wshadow -Wpointer-arith -Wcast-align \
 
 CFLAGS := -g -std=gnu99 $(WARNINGS)
 
-CFLAGS += -I./include
+CFLAGS += -I./include -I./src
 CFLAGS += $(shell pkg-config --cflags $(libs)) 
 
 LDFLAGS = $(shell pkg-config --libs $(libs))
@@ -59,21 +60,24 @@ todolist:
 	# Seemingly broken at this moment
 	-@for file in $(ALLFILES:Makefile=); do fgrep -H -e TODO -e FIXME $$file; done; true
 
-bin/objects/%.o: src/%.c Makefile | bin/objects
+# Source files
+bin/objects/%.o: src/%.c Makefile | $(OBJDIRS) 
 	$(info compiling $@)
 	@$(CC) $(CFLAGS) -MMD -MP -c $< -o $@ 
 
 samples: $(SAMPLES)
 
+# Link into final library file
 bin/%: bin/objects/%.o libmosaic.a
 	@$(CC) -o $@ $< bin/libmosaic.a $(LDFLAGS)
 
-bin/objects/%.o: samples/%.c Makefile | bin/objects
+# Samples
+bin/objects/%.o: samples/%.c Makefile | $(OBJDIRS)
 	@$(CC) $(CFLAGS) -c $< -o $@ 
 	$(info compiling $@)
 
-bin/objects: 
-	mkdir -p bin/objects
+$(OBJDIRS): 
+	@mkdir -p $@ 
 	
 docs: $(DOCS)
 

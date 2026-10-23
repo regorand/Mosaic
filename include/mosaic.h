@@ -290,6 +290,12 @@ uint32_t msic_destroy_vulkan_core(MsicVulkanCore *core);
  */
 void msic_destroy_window(MsicVulkanCore *core, uint32_t window_index);
 
+/**
+ * Prints a list of device features and whether they are supported.
+ * It prints through \link msic_log_callback \endlink.
+ */
+void msic_list_print_device_features(MsicVulkanCore *core);
+
 // Include the control parameters
 #include "control_params.h"
 

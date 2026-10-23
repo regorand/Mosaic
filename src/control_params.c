@@ -1,6 +1,9 @@
 // #include "mosaic.h"
 #include "control_params.h"
-#include "core.h"
+#include "core/core.h"
+#include "core/window/window.h"
+#include "core/device/device.h"
+#include "core/swapchain/swapchain.h"
 
 FILE **msic_log_output_stream = &stdout; 
 FILE **msic_err_output_stream = &stderr;

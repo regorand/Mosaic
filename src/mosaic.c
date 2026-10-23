@@ -1,5 +1,9 @@
 #include "mosaic.h"
-#include "core.h"
+#include "core/core.h"
+#include "core/device/device.h"
+#include "core/window/window.h"
+#include "core/swapchain/swapchain.h"
+
 #include <vulkan/vulkan.h>
 #include <stdint.h>
 #include <stdarg.h>
