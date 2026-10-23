@@ -600,7 +600,17 @@ uint32_t msic_create_swapchain(MsicVulkanCore *core) {
 
     MSIC_VK_CALL(vkCreateSwapchainKHR(core->device, &create_info, NULL, &w_context->swapchain));
     MSIC_VERBOSE("Successfully created swapchain for window %d", i);
+
+    w_context->chosen_swapchain_format = format.format;
+    w_context->current_swap_extent = extent; 
+    
+    MSIC_VK_CALL(vkGetSwapchainImagesKHR(core->device, w_context->swapchain, &w_context->num_swap_images, NULL));
+
+    w_context->swap_images = malloc(w_context->num_swap_images * sizeof(VkImage));
+    MSIC_VK_CALL(vkGetSwapchainImagesKHR(core->device, w_context->swapchain, &w_context->num_swap_images, w_context->swap_images));
+    MSIC_VERBOSE("Retrived swapchain images for window %d", i);
   }
+
   MSIC_INFO("Created %d swapchain(s)", core->num_windows);
 
   return 0;
@@ -888,7 +898,6 @@ bool msic_default_phys_device_suitable(VkPhysicalDevice device,
   // Check if we have a queue that supports both presentation and graphics operations.
   // If so, choose that one. If multiple, use lower index
 
-
   uint32_t first_present_support = 0;
   uint32_t first_graphics_support = 0;
 
@@ -934,90 +943,6 @@ bool msic_default_phys_device_suitable(VkPhysicalDevice device,
       }
     }
   }
-
-// TODO Hopefully can delete all this once queues work well after refactor
-//   // -------------
-//   if (!msic_headless) {
-//     for (uint32_t i = 0; i < queue_families_count; i++) {
-//       bool supports_all = true;
-// 
-//       for (uint32_t j = 0; j < core->num_windows; j++) {
-//         MsicWindowContext *w_context = &core->windows[j];
-//         VkBool32 present_support = false;
-// 
-//         MSIC_VK_CALL(vkGetPhysicalDeviceSurfaceSupportKHR(device, i, w_context->surface, &present_support));
-// 
-//         supports_all &= present_support; 
-//       } 
-// 
-//       if (supports_all) {
-//         core->present_queue_index = i;
-//         break;
-//       }
-//     }
-// 
-//     MSIC_ERR("Requested non-headless application but no present queue was found");
-//     return false;
-//   }
-// 
-// 
-//   bool require_free_on_fail = false;
-//   if (queue_families_count == 0) {
-//     MSIC_INFO("Device %s has no queue families", props.deviceName);
-//     suitable = false;
-//   } else {
-//     VkQueueFamilyProperties queue_families[queue_families_count];
-//     vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_families_count, queue_families);
-// 
-//     if (!msic_headless) {
-//       for (uint32_t i = 0; i < queue_families_count; i++) {
-//         if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-//           core->graphics_queue_index = i;
-//           break;
-//         }
-//       }
-// 
-//       MSIC_ERR("Requested non-headless application but no graphics queue was found");
-//       return false;
-//     }
-// 
-//     if (msic_num_queue_families == 0) {
-//       *num_queue_indices = 1;
-// 
-//       *queue_indices = malloc(sizeof(uint32_t));
-//       require_free_on_fail = true;
-//       
-//       *queue_indices[0] = 0;
-//     } else {
-//       *num_queue_indices = msic_num_queue_families;
-//       *queue_indices = malloc(sizeof(uint32_t) * msic_num_queue_families);
-//       require_free_on_fail = true;
-// 
-//       // For all requested family flags...
-//       for (uint32_t i = 0; i < msic_num_queue_families; i++) {
-//         bool found_queue_family = false;
-// 
-//         // ... loop over all available queue families...
-//         for (uint32_t j = 0; j < queue_families_count; j++) {
-// 
-//           // ... and check if the required flags are supported.
-//           if ((msic_queue_families_flags[i] & queue_families[j].queueFlags) == msic_queue_families_flags[i]) {
-//             (*queue_indices)[i] = j;   
-// 
-//             found_queue_family = true;
-//             // Don't look for other queue families, which could overwrite this
-//             break;
-//           }
-// 
-//         }
-// 
-//         if (!found_queue_family) {
-//           MSIC_VERBOSE("\tNo queue family for flag %d", msic_queue_families_flags[i]);
-//           suitable = false;
-//         }
-//       }
-//     }
-//   }
 
   // --------------
   // Device Extension support 

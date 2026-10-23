@@ -161,6 +161,10 @@ void msic_destroy_window(MsicVulkanCore *core, uint32_t window_index) {
     destroy_swapchain(core, w_context->swapchain);
   }
 
+  if (w_context->swap_images != NULL) {
+    free(w_context->swap_images);
+  }
+
   if (w_context->formats != NULL) {
     free(w_context->formats);
   }

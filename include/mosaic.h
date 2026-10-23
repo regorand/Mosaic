@@ -130,6 +130,28 @@ struct MsicWindowContext {
    * Vulkan handle to the swapchain for this image
    */
   VkSwapchainKHR swapchain;
+
+  /**
+   * Swapchain format chosen for this window's swapchain
+   */
+  VkFormat chosen_swapchain_format;
+
+  /**
+   * Current extent of this window's swapchain
+   */
+  VkExtent2D current_swap_extent;
+
+  /**
+   * Number of created swapchain images
+   * This parameter specifies the length of \link swap_images \endlink array.
+   */
+  uint32_t num_swap_images;
+
+  /**
+   * Vulkan handles to the swapchain images for this window.
+   * Length of this array is specifed by \link num_swap_images \endlink parameter.
+   */
+  VkImage *swap_images;
 };
 
 typedef struct MsicWindowContext MsicWindowContext;
