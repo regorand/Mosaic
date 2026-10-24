@@ -18,4 +18,6 @@ VkExtent2D msic_default_choose_swap_extent(MsicWindowContext *w_context, uint32_
 
 uint32_t msic_choose_image_count(MsicWindowContext *w_context, uint32_t index);
 
+uint32_t msic_create_swapchain_imageviews(MsicVulkanCore *core);
+
 #endif // MSIC_SWAPCHAIN_H

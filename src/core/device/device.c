@@ -21,8 +21,8 @@ uint32_t msic_create_physical_device(MsicVulkanCore *core) {
 
   uint32_t  arr_present_indices[device_count];
   uint32_t  arr_graphics_indices[device_count];
-  bool      arr_present_graphics_match[device_count];
   uint32_t *arr_queue_indices[device_count];
+  bool      arr_present_graphics_match[device_count];
   bool      suitable[device_count];
 
   for (uint32_t i = 0; i < device_count; i++) {
@@ -255,16 +255,6 @@ bool msic_default_phys_device_suitable(VkPhysicalDevice device,
     MSIC_VERBOSE("\tRequested device extensions not supported"); 
     suitable = false;
   }
-
-
-  // --------------
-  // Swapchain requirements 
-  // --------------
-  if (!msic_present) {
-    // TODO Implement
-  } 
-
-
 
   if (!suitable) {
     MSIC_INFO("Device %s unsuitable", props.deviceName);

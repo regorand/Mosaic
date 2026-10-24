@@ -93,6 +93,9 @@ uint32_t msic_build_vulkan_core(MsicVulkanCore *core) {
     }
 
     MSIC_CALL(msic_create_swapchain(core));
+
+    MSIC_VERBOSE("Creating Swapchain Views");
+    MSIC_CALL(msic_create_swapchain_imageviews(core));
   }
 
   MSIC_INFO("Finished loading vulkan core");
@@ -160,6 +163,14 @@ void msic_destroy_window(MsicVulkanCore *core, uint32_t window_index) {
   MsicWindowContext *w_context = &core->windows[window_index];
 
   w_context->open = false;
+
+  if (w_context->swap_image_views != NULL) {
+    for (uint32_t i = 0; i < w_context->num_swap_images; i++) {
+      vkDestroyImageView(core->device, w_context->swap_image_views[i], NULL);
+    }
+
+    free(w_context->swap_image_views);
+  }
 
   if (w_context->swapchain != NULL) {
     destroy_swapchain(core, w_context->swapchain);

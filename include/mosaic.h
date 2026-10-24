@@ -152,6 +152,12 @@ struct MsicWindowContext {
    * Length of this array is specifed by \link num_swap_images \endlink parameter.
    */
   VkImage *swap_images;
+
+  /**
+   * Vulkan handles to the image views of the swapchain images for this window.
+   * Length of this array is specified by \link num_swap_images \endlink parameter.
+   */
+  VkImageView *swap_image_views;
 };
 
 typedef struct MsicWindowContext MsicWindowContext;

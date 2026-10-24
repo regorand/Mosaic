@@ -18,12 +18,14 @@ uint32_t msic_init_glfw() {
 }
 
 void msic_populate_empty_window_context(MsicWindowContext *w_context) {
-  w_context->open          = false;
-  w_context->surface       = NULL;
-  w_context->window        = NULL;
-  w_context->formats       = NULL;
-  w_context->present_modes = NULL;
-  w_context->swapchain     = NULL;
+  w_context->open             = false;
+  w_context->surface          = NULL;
+  w_context->window           = NULL;
+  w_context->formats          = NULL;
+  w_context->present_modes    = NULL;
+  w_context->swapchain        = NULL;
+  w_context->swap_images      = NULL;
+  w_context->swap_image_views = NULL;
 }
 
 uint32_t msic_create_windows(MsicVulkanCore *core) {
