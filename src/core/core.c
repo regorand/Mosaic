@@ -126,7 +126,7 @@ bool msic_check_extension_support(void) {
     return false;
   }
 
-  if (!msic_headless) {
+  if (msic_present) {
     if (!msic_check_extension(extension_props, extension_count, VK_KHR_SURFACE_EXTENSION_NAME)) {
       MSIC_ERR("VK_KHR_SURFACE extensions not supported!");
       return false;
@@ -156,7 +156,7 @@ bool msic_check_device_extension_support(VkPhysicalDevice device) {
     return false;
   }
 
-  if (!msic_headless) {
+  if (msic_present) {
     if (!msic_check_extension(extension_props, extension_count, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
       MSIC_ERR("VK_KHR_Swapchain extension not supported!");
       return false;
@@ -180,7 +180,7 @@ uint32_t msic_write_extensions(uint32_t extension_count, const char** pp_extensi
   uint32_t extra_extensions = 0;
 
   if (msic_enable_validation) extra_extensions++;
-  if (!msic_headless)         extra_extensions++;
+  if (msic_present)           extra_extensions++;
 
   if (extension_count < msic_extension_count + extra_extensions) {
     // TODO could give better error message -> which extensions can be added automatically, which are, etc.
@@ -195,7 +195,7 @@ uint32_t msic_write_extensions(uint32_t extension_count, const char** pp_extensi
     current_extra_offset++;
   }
 
-  if (!msic_headless) {
+  if (msic_present) {
     pp_extension_names[msic_extension_count + current_extra_offset] = VK_KHR_SURFACE_EXTENSION_NAME; 
     current_extra_offset++;
   }
@@ -223,7 +223,7 @@ uint32_t msic_write_device_extensions(uint32_t extension_count, const char** pp_
   memcpy(pp_extension_names, msic_extensions, msic_device_extension_count * sizeof(char *));
 
   uint32_t extra_extensions = 0;
-  if (!msic_headless)         extra_extensions++;
+  if (msic_present)         extra_extensions++;
 
   if (extension_count < msic_device_extension_count + extra_extensions) {
     // TODO could give better error message -> which extensions can be added automatically, which are, etc.
@@ -233,7 +233,7 @@ uint32_t msic_write_device_extensions(uint32_t extension_count, const char** pp_
 
   uint32_t current_extra_offset = 0;
 
-  if (!msic_headless) {
+  if (msic_present) {
     pp_extension_names[msic_device_extension_count + current_extra_offset] = VK_KHR_SWAPCHAIN_EXTENSION_NAME; 
     current_extra_offset++;
   }
@@ -261,7 +261,7 @@ uint32_t msic_create_instance(MsicVulkanCore *core) {
   createInfo.enabledExtensionCount = msic_extension_count;
   
   if (msic_enable_validation) createInfo.enabledExtensionCount++;
-  if (!msic_headless)         createInfo.enabledExtensionCount++;
+  if (msic_present)           createInfo.enabledExtensionCount++;
 
   const char *extension_names[createInfo.enabledExtensionCount];
 
@@ -316,3 +316,58 @@ uint32_t msic_create_instance(MsicVulkanCore *core) {
   return 0;
 }
 
+uint32_t msic_load_file(char *file_name, char **target_buf, int *byte_num) {
+  FILE *fp = fopen(file_name, "r");
+  if (fp != NULL) {
+      /* Go to the end of the file. */
+      if (fseek(fp, 0L, SEEK_END) == 0) {
+          /* Get the size of the file. */
+          long bufsize = ftell(fp);
+          if (bufsize == -1) { 
+            MSIC_ERR("Failed to read file %s", file_name);
+            return 1;
+          }
+          *byte_num = (int) bufsize;
+  
+          /* Allocate our buffer to that size. */
+          *target_buf = malloc(sizeof(char) * ((long unsigned int) bufsize + 1));
+  
+          /* Go back to the start of the file. */
+          if (fseek(fp, 0L, SEEK_SET) != 0) { /* Error */ }
+  
+          /* Read the entire file into memory. */
+          size_t newLen = fread(*target_buf, sizeof(char), (long unsigned int) bufsize, fp);
+          if ( ferror( fp ) != 0 ) {
+            MSIC_ERR("Failed to read file %s", file_name);    
+            free(*target_buf);
+            return 1;
+          } else {
+            *target_buf[newLen++] = '\0'; /* Just to be safe. */
+          }
+      } else {
+        MSIC_ERR("Failed to seek end of file %s", file_name);
+        return 1;
+      }
+      fclose(fp);
+  } else {
+    MSIC_ERR("Failed to open %s", file_name);
+    return 1;
+  }
+
+  return 0;
+}
+
+/**
+ - Pipeline
+  - Shader Stages
+  - Vertex Input
+  - Input Assembly
+  - viewport state
+  - raster state
+  - multisample state
+  - depth stencil state
+  - color blend state
+  - dynamic state
+  - pipeline layout
+  - renderpass & subpass
+ */

@@ -83,14 +83,6 @@ extern int32_t msic_physical_device_type;
 extern VkPhysicalDeviceFeatures msic_required_physical_device_features;
 
 /**
- * Control parameter specifying whether vulkan is being run headless, i.e. without a window
- * If false, mosaic will require a present queue to be present and set the corresponding queue index variable in \link MsicVulkanCore \endlink.
- * TODO Remove and replace with \link msic_present \endlink.
-
- */
-extern bool msic_headless;
-
-/**
  * Control parameter specifying whether application will present to the screen 
  * If true, mosaic will require a present queue to be present and set the corresponding queue index variable in \link MsicVulkanCore \endlink.
 

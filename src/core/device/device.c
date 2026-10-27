@@ -425,7 +425,7 @@ uint32_t msic_create_device(MsicVulkanCore *core) {
 
   create_info.enabledExtensionCount = msic_device_extension_count;
   
-  if (!msic_headless) create_info.enabledExtensionCount++;
+  if (msic_present) create_info.enabledExtensionCount++;
 
   const char *extension_names[create_info.enabledExtensionCount];
 

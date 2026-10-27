@@ -45,8 +45,6 @@ uint32_t msic_device_extension_count = 0;
 
 char **msic_device_extensions = NULL;
 
-bool msic_headless = false;
-
 bool msic_present =  true;
 bool msic_graphics = true;
 

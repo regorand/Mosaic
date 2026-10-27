@@ -45,5 +45,10 @@ uint32_t msic_create_instance(MsicVulkanCore *core);
 uint32_t msic_setup_debug_messenger(MsicVulkanCore *core);
 void msic_populate_debug_messenger_create_info(VkDebugUtilsMessengerCreateInfoEXT *create_info);
 
+/**
+ * loads a file into a target_buf. 
+ * target_buf must be freed by user of this function!
+ */
+uint32_t msic_load_file(char *file_name, char **target_buf, int *byte_num);
 
 #endif // MSIC_CORE_H

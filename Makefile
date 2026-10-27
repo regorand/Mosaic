@@ -9,6 +9,8 @@ INCL_DIR = include
 PROJDIRS = $(SRC_DIR) $(INCL_DIR) 
 SPLDIRS  = samples
 
+GLSLC=glslc
+
 TAGS = tags
 DOCS = docs/html/index.html
 
@@ -24,9 +26,11 @@ DEPFILES = $(patsubst %.o,%.d,$(OBJFILES))
 OBJDIRS := $(sort $(dir $(OBJFILES)))
 
 SPLFILES = $(shell find $(SPLDIRS) -type f -name "*.c")
-SPLOBJFILES = $(patsubst samples/%,bin/objects/%,$(patsubst %.c,%.o,$(SPLFILES)))
-SAMPLES = $(patsubst samples/%,bin/%,$(patsubst %.c,%,$(SPLFILES)))
-
+SPLOBJFILES = $(patsubst samples/%,bin/samples/%,$(patsubst %.c,%.o,$(SPLFILES)))
+SPLOBJDIRS = $(dir $(SPLOBJFILES))
+SAMPLES = $(patsubst samples/%/main.c,bin/%, $(SPLFILES))
+SPLSHADERS = $(shell find $(SPLDIRS) -type f -name "*.vert" -o -name "*.frag")
+SPLSPVFILES = $(patsubst samples/%,bin/samples/%,$(patsubst %,%.spv,$(SPLSHADERS)))
 
 .PHONY: all clean todolist samples 
 
@@ -47,12 +51,15 @@ all: libmosaic.a samples docs tags
 
 code: libmosaic.a samples
 
+shaders: $(SPLSPVFILES)
+
 libmosaic.a: $(OBJFILES)
 	@$(AR) r bin/libmosaic.a $?
 
 clean:
 	-@$(RM) $(wildcard $(OBJFILES) $(DEPFILES) $(SPLOBJFILES) $(SAMPLES) bin/libmosaic.a)
 	-@$(RM) -r bin/objects
+	-@$(RM) -r bin/samples
 
 clean-all: clean clean-docs
 
@@ -62,22 +69,32 @@ todolist:
 
 # Source files
 bin/objects/%.o: src/%.c Makefile | $(OBJDIRS) 
-	$(info compiling $@)
+	$(info compiling library object: $@)
 	@$(CC) $(CFLAGS) -MMD -MP -c $< -o $@ 
 
-samples: $(SAMPLES)
+samples: $(SAMPLES) $(SPLSPVFILES)
 
-# Link into final library file
-bin/%: bin/objects/%.o libmosaic.a
+# Link samples 
+bin/%: $(SPLOBJFILES) libmosaic.a
 	@$(CC) -o $@ $< bin/libmosaic.a $(LDFLAGS)
 
-# Samples
-bin/objects/%.o: samples/%.c Makefile | $(OBJDIRS)
+# Sample objects 
+bin/samples/%.o: samples/%.c Makefile | $(SPLOBJDIRS)
+	@mkdir -p $(dir $@)
 	@$(CC) $(CFLAGS) -c $< -o $@ 
-	$(info compiling $@)
+	$(info compiling sample object: $@)
+
+# Sample shaders
+bin/samples/%.spv: samples/% Makefile | $(SPLOBJDIRS)
+	$(info compiling shader: $<)
+	@$(GLSLC) $< -o $@
+
 
 $(OBJDIRS): 
 	@mkdir -p $@ 
+
+$(SPLOBJDIRS):
+	@mkdir -p $@
 	
 docs: $(DOCS)
 

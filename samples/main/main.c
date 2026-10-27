@@ -34,6 +34,24 @@ int main(void) {
 
   MSIC_INFO("Initialized Vulkan context without error!");
 
+  MSIC_INFO("Attempting to compile fragment shader");
+  msic_compile_shader_runtime("samples/main/main.frag", "", "bin/samples/main/main.frag.spv");
+
+  MSIC_INFO("Attempting to load shaders");
+
+  const char *paths[2] = { "bin/samples/main/main.vert.spv", "bin/samples/main/main.frag.spv" };
+
+  MsicPipelineInfo info;
+  info.num_shaders = 2;
+  info.shader_paths = paths; 
+
+  res = msic_build_pipeline(&core, &info);
+  if (res != 0) {
+    MSIC_ERR("Error building pipeline");
+  } else {
+    MSIC_INFO("Successfully built pipeline");
+  }
+
   bool still_open[core.num_windows];
   for (uint32_t i = 0; i < core.num_windows; i++) {
     still_open[i] = true;

@@ -249,14 +249,14 @@ struct MsicVulkanCore {
    *
    * Value is equal to \link msic_num_windows \endlink control parameter at the time of calling. 
    *
-   * Will always be zero if \link msic_headless \endlink is true.
+   * Will always be zero if \link msic_present \endlink is false.
    */
   uint32_t num_windows;
   
   /**
    * Array holding the window context for each requested winow. Length of array is specified in \link MsicVulkanCore.num_windows \endlink.
    *
-   * Will always have length zero if \link msic_headless \endlink is true.
+   * Will always have length zero if \link msic_present \endlink is false.
    * 
    * Window creation is handled by GLFW.
    */
@@ -299,8 +299,41 @@ void msic_destroy_window(MsicVulkanCore *core, uint32_t window_index);
 /**
  * Prints a list of device features and whether they are supported.
  * It prints through \link msic_log_callback \endlink.
+ *
+ * @param[core]: Initialized \link MsicVulkanCore \endlink struct. 
  */
 void msic_list_print_device_features(MsicVulkanCore *core);
+
+/**
+ * Compiles a shader at program runtime. Currently requires `glslc` to be callable.
+ * Currently only a crutch, reporting of compilation errors etc. is not in line with rest of library.
+ * If possible, it is better to compile shaders at program compile time.
+ *
+ * @param[path]: Null terminated string containing the path of the shader source file.
+ * @param[options]: Null terminated string containing extra options for the compilation or NULL.
+ * @param[out_path]: Null terminated string containing the desired output path.
+ *
+ * @returns: Integer success code. 0 on success
+ */
+uint32_t msic_compile_shader_runtime(const char *path, const char* options, const char *out_path);
+
+
+struct MsicPipelineInfo {
+  /**
+   * Specifies how many shaders modules are to be created
+   */
+  size_t num_shaders;
+
+  /**
+   * Array of file paths to shader spir-V code
+   * Length is given by \link num_shaders \endlink.
+   */ 
+  const char **shader_paths;
+};
+
+typedef struct MsicPipelineInfo MsicPipelineInfo;
+
+uint32_t msic_build_pipeline(MsicVulkanCore *core, MsicPipelineInfo *info);
 
 // Include the control parameters
 #include "control_params.h"
