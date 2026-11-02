@@ -1,6 +1,7 @@
 # Mosaic
 
 My own little attempt at a vulkan library. 
+Current version does not support fully featured applications yet, but it is still in development.
 
 ## Building 
 
